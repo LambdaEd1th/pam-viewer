@@ -365,6 +365,32 @@ body {
   background-color: rgba(0, 122, 204, 0.08);
 }
 
+#drop-hint {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+  user-select: none;
+}
+#drop-hint.hidden { display: none; }
+.drop-hint-icon {
+  font-size: 64px;
+  margin-bottom: 16px;
+  opacity: 0.5;
+}
+.drop-hint-text {
+  font-size: 18px;
+  color: rgba(255, 255, 255, 0.5);
+  margin-bottom: 6px;
+}
+.drop-hint-sub {
+  font-size: 13px;
+  color: rgba(255, 255, 255, 0.3);
+}
+
 /* ── Status bar ── */
 #statusbar {
   display: flex;

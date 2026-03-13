@@ -87,6 +87,10 @@ const messages = {
 
     // Language
     'label.lang': '语言',
+
+    // Drop hint
+    'drop.hint': '拖放文件夹到此处加载动画',
+    'drop.hintSub': '支持 .pam / .pam.json + PNG',
   },
 
   'en': {
@@ -177,6 +181,10 @@ const messages = {
 
     // Language
     'label.lang': 'Lang',
+
+    // Drop hint
+    'drop.hint': 'Drop a folder here to load animation',
+    'drop.hintSub': 'Supports .pam / .pam.json + PNG',
   },
 };
 

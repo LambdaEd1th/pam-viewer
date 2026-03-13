@@ -91,6 +91,7 @@ const exportProgress = document.getElementById('export-progress');
 const exportStatus = document.getElementById('export-status');
 const exportCancelBtn = document.getElementById('export-cancel');
 const langSelect = document.getElementById('lang-select');
+const dropHint = document.getElementById('drop-hint');
 
 // ── State ──
 let animation = null;
@@ -376,6 +377,7 @@ async function loadFromFiles(files) {
 
   btnClear.disabled = false;
   statusText.textContent = t('status.loaded', { name: sourceFile.name, images: animation.image.length, loaded, sprites: animation.sprite.length });
+  dropHint.classList.add('hidden');
   resizeCanvas();
 }
 
@@ -430,6 +432,7 @@ btnClear.addEventListener('click', () => {
   const dpr = window.devicePixelRatio || 1;
   ctx.setTransform(1, 0, 0, 1, 0, 0);
   ctx.clearRect(0, 0, canvas.width, canvas.height);
+  dropHint.classList.remove('hidden');
 });
 
 function blobToImage(fileOrBlob) {
