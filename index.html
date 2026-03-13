@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>PAM Viewer</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div id="app">
+    <header id="toolbar">
+      <button id="btn-load" title="加载动画文件夹">📂 加载</button>
+      <button id="btn-clear" title="清除动画" disabled>✕ 清除</button>
+      <span id="anim-name" class="toolbar-label">未加载</span>
+      <div class="toolbar-sep"></div>
+      <label>Sprite:
+        <select id="sprite-select" disabled></select>
+      </label>
+      <label>标签:
+        <select id="label-select" disabled></select>
+      </label>
+      <div class="toolbar-sep"></div>
+      <button id="btn-prev" title="上一帧" disabled>⏮</button>
+      <button id="btn-play" title="播放/暂停" disabled>▶</button>
+      <button id="btn-next" title="下一帧" disabled>⏭</button>
+      <span id="frame-display">0 / 0</span>
+      <input id="frame-slider" type="range" min="0" max="0" value="0" step="1" disabled title="拖动跳转帧">
+      <label class="frame-range-label">范围:
+        <input id="range-begin" type="number" min="0" value="0" disabled title="起始帧">
+        <span>–</span>
+        <input id="range-end" type="number" min="0" value="0" disabled title="结束帧">
+      </label>
+      <div class="toolbar-sep"></div>
+      <label>速度:
+        <input id="speed-input" type="number" value="30" min="1" max="120" step="1" disabled>
+        <span>FPS</span>
+      </label>
+      <label><input id="loop-check" type="checkbox" checked> 循环</label>
+      <label><input id="reverse-check" type="checkbox"> 反向</label>
+      <label><input id="autoplay-check" type="checkbox" checked> 自动播放</label>
+      <label><input id="keep-speed-check" type="checkbox"> 保持速度</label>
+      <label><input id="boundary-check" type="checkbox"> 边界</label>
+      <div class="toolbar-sep"></div>
+      <label>植物层:
+        <select id="plant-layer-select" disabled></select>
+      </label>
+      <label>僵尸状态:
+        <select id="zombie-state-select" disabled></select>
+      </label>
+      <label><input id="ground-swatch-check" type="checkbox" disabled> 地面色板</label>
+      <div class="toolbar-sep"></div>
+      <button id="btn-toggle-images" class="btn-panel-toggle active" title="Image 面板">🖼</button>
+      <button id="btn-toggle-sprites" class="btn-panel-toggle active" title="Sprite 面板">🎭</button>
+      <button id="btn-zoom-reset" title="重置视图">⊙</button>
+      <div class="toolbar-sep"></div>
+      <button id="btn-export-png" title="导出当前帧为 PNG" disabled>📷 PNG</button>
+      <button id="btn-export-gif" title="导出动画为 GIF" disabled>🎞 GIF</button>
+      <button id="btn-export-sheet" title="导出 Sprite Sheet" disabled>🧩 Sheet</button>
+      <button id="btn-export-fla" title="导出为 FLA (Adobe Animate)" disabled>🎬 FLA</button>
+    </header>
+    <!-- Export progress overlay -->
+    <div id="export-overlay" class="export-overlay hidden">
+      <div class="export-dialog">
+        <div class="export-title">导出中…</div>
+        <progress id="export-progress" max="100" value="0"></progress>
+        <div id="export-status">准备中…</div>
+        <button id="export-cancel">取消</button>
+      </div>
+    </div>
+    <div id="main-content">
+      <aside id="panel-images" class="filter-panel">
+        <div class="panel-header">
+          <span>Images</span>
+          <div class="panel-btns">
+            <button id="btn-img-all" title="全选">全选</button>
+            <button id="btn-img-none" title="全不选">全不选</button>
+          </div>
+        </div>
+        <div class="panel-filter-row">
+          <input id="img-regex" type="text" placeholder="正则过滤…" title="输入正则表达式过滤 Image">
+        </div>
+        <ul id="image-list" class="filter-list"></ul>
+      </aside>
+      <div id="resize-handle-left" class="resize-handle"></div>
+      <div id="stage-container">
+        <canvas id="stage"></canvas>
+      </div>
+      <div id="resize-handle-right" class="resize-handle"></div>
+      <aside id="panel-sprites" class="filter-panel">
+        <div class="panel-header">
+          <span>Sprites</span>
+          <div class="panel-btns">
+            <button id="btn-spr-all" title="全选">全选</button>
+            <button id="btn-spr-none" title="全不选">全不选</button>
+          </div>
+        </div>
+        <div class="panel-filter-row">
+          <input id="spr-regex" type="text" placeholder="正则过滤…" title="输入正则表达式过滤 Sprite">
+        </div>
+        <ul id="sprite-list" class="filter-list"></ul>
+      </aside>
+    </div>
+    <footer id="statusbar">
+      <span id="status-text">拖放包含 .pam.json 和 PNG 的文件夹到画布区域，或点击 📂 加载</span>
+      <span id="zoom-display">100%</span>
+    </footer>
+  </div>
+  <script type="module" src="main.js"></script>
+</body>
+</html>
