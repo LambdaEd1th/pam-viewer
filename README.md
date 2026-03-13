@@ -49,6 +49,10 @@ The FLA export generates a complete Adobe Animate project structure:
 
 Pure HTML5/CSS/JavaScript (ES modules), no build tools or dependencies. Runs entirely in the browser.
 
+## Author
+
+[LambdaEd1th](https://github.com/LambdaEd1th)
+
 ## License
 
 This project is licensed under the GNU General Public License v3.0 — see the [LICENSE](LICENSE) file for details.

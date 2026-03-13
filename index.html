@@ -4,80 +4,99 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>PAM Viewer</title>
+  <meta name="author" content="LambdaEd1th">
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
   <div id="app">
     <header id="toolbar">
-      <button id="btn-load" title="加载动画文件夹">📂 加载</button>
-      <button id="btn-clear" title="清除动画" disabled>✕ 清除</button>
+      <button id="btn-load" data-i18n="btn.load" data-i18n-title="btn.load.title" title="加载动画文件夹">📂 加载</button>
+      <button id="btn-clear" data-i18n="btn.clear" data-i18n-title="btn.clear.title" title="清除动画" disabled>✕ 清除</button>
       <span id="anim-name" class="toolbar-label">未加载</span>
       <div class="toolbar-sep"></div>
-      <label>Sprite:
+      <label data-i18n-text="label.sprite">Sprite:
         <select id="sprite-select" disabled></select>
       </label>
-      <label>标签:
+      <label data-i18n-text="label.tag">标签:
         <select id="label-select" disabled></select>
       </label>
       <div class="toolbar-sep"></div>
-      <button id="btn-prev" title="上一帧" disabled>⏮</button>
-      <button id="btn-play" title="播放/暂停" disabled>▶</button>
-      <button id="btn-next" title="下一帧" disabled>⏭</button>
+      <button id="btn-prev" data-i18n-title="btn.prev.title" title="上一帧" disabled>⏮</button>
+      <button id="btn-play" data-i18n-title="btn.play.title" title="播放/暂停" disabled>▶</button>
+      <button id="btn-next" data-i18n-title="btn.next.title" title="下一帧" disabled>⏭</button>
       <span id="frame-display">0 / 0</span>
-      <input id="frame-slider" type="range" min="0" max="0" value="0" step="1" disabled title="拖动跳转帧">
-      <label class="frame-range-label">范围:
-        <input id="range-begin" type="number" min="0" value="0" disabled title="起始帧">
+      <input id="frame-slider" type="range" min="0" max="0" value="0" step="1" disabled data-i18n-title="frame.slider.title" title="拖动跳转帧">
+      <label class="frame-range-label" data-i18n-text="label.range">范围:
+        <input id="range-begin" type="number" min="0" value="0" disabled data-i18n-title="range.begin.title" title="起始帧">
         <span>–</span>
-        <input id="range-end" type="number" min="0" value="0" disabled title="结束帧">
+        <input id="range-end" type="number" min="0" value="0" disabled data-i18n-title="range.end.title" title="结束帧">
       </label>
       <div class="toolbar-sep"></div>
-      <label>速度:
+      <label class="speed-label" data-i18n-text="label.speed">速度:
         <input id="speed-input" type="number" value="30" min="1" max="120" step="1" disabled>
         <span>FPS</span>
+        <button id="speed-preset-btn" type="button" data-i18n-title="speed.preset.title" title="速度预设">▾</button>
+        <div id="speed-preset-menu" class="preset-menu hidden"></div>
       </label>
-      <label><input id="loop-check" type="checkbox" checked> 循环</label>
-      <label><input id="reverse-check" type="checkbox"> 反向</label>
-      <label><input id="autoplay-check" type="checkbox" checked> 自动播放</label>
-      <label><input id="keep-speed-check" type="checkbox"> 保持速度</label>
-      <label><input id="boundary-check" type="checkbox"> 边界</label>
+      <label><input id="loop-check" type="checkbox" checked> <span data-i18n="check.loop">循环</span></label>
+      <label><input id="reverse-check" type="checkbox"> <span data-i18n="check.reverse">反向</span></label>
+      <label><input id="autoplay-check" type="checkbox" checked> <span data-i18n="check.autoplay">自动播放</span></label>
+      <label><input id="keep-speed-check" type="checkbox"> <span data-i18n="check.keepSpeed">保持速度</span></label>
+      <label><input id="boundary-check" type="checkbox"> <span data-i18n="check.boundary">边界</span></label>
       <div class="toolbar-sep"></div>
-      <label>植物层:
+      <label data-i18n-text="label.plantLayer">植物层:
         <select id="plant-layer-select" disabled></select>
       </label>
-      <label>僵尸状态:
+      <label data-i18n-text="label.zombieState">僵尸状态:
         <select id="zombie-state-select" disabled></select>
       </label>
-      <label><input id="ground-swatch-check" type="checkbox" disabled> 地面色板</label>
+      <label><input id="ground-swatch-check" type="checkbox" disabled> <span data-i18n="check.groundSwatch">地面色板</span></label>
       <div class="toolbar-sep"></div>
-      <button id="btn-toggle-images" class="btn-panel-toggle active" title="Image 面板">🖼</button>
-      <button id="btn-toggle-sprites" class="btn-panel-toggle active" title="Sprite 面板">🎭</button>
-      <button id="btn-zoom-reset" title="重置视图">⊙</button>
+      <button id="btn-toggle-images" class="btn-panel-toggle active" data-i18n-title="btn.toggleImages.title" title="Image 面板">🖼</button>
+      <button id="btn-toggle-sprites" class="btn-panel-toggle active" data-i18n-title="btn.toggleSprites.title" title="Sprite 面板">🎭</button>
+      <button id="btn-zoom-reset" data-i18n-title="btn.zoomReset.title" title="重置视图">⊙</button>
       <div class="toolbar-sep"></div>
-      <button id="btn-export-png" title="导出当前帧为 PNG" disabled>📷 PNG</button>
-      <button id="btn-export-gif" title="导出动画为 GIF" disabled>🎞 GIF</button>
-      <button id="btn-export-sheet" title="导出 Sprite Sheet" disabled>🧩 Sheet</button>
-      <button id="btn-export-fla" title="导出为 FLA (Adobe Animate)" disabled>🎬 FLA</button>
+      <label class="size-label" data-i18n-text="label.size" data-i18n-title="label.size" title="动画尺寸 (宽×高)">尺寸:
+        <input id="size-w" type="number" min="1" max="9999" value="0" disabled>
+        <span>×</span>
+        <input id="size-h" type="number" min="1" max="9999" value="0" disabled>
+        <select id="size-scale" disabled data-i18n-title="size.scale.title" title="导出倍率">
+          <option value="1">1×</option>
+          <option value="2">2×</option>
+          <option value="3">3×</option>
+          <option value="4">4×</option>
+        </select>
+      </label>
+      <div class="toolbar-sep"></div>
+      <button id="btn-export-png" data-i18n-title="btn.exportPng.title" title="导出当前帧为 PNG" disabled>📷 PNG</button>
+      <button id="btn-export-apng" data-i18n-title="btn.exportApng.title" title="导出动画为 APNG" disabled>🧱 APNG</button>
+      <button id="btn-export-webp" data-i18n-title="btn.exportWebp.title" title="导出动画为 WebP" disabled>🎞 WebP</button>
+      <button id="btn-export-fla" data-i18n-title="btn.exportFla.title" title="导出为 FLA (Adobe Animate)" disabled>🎬 FLA</button>
+      <div class="toolbar-sep"></div>
+      <label class="lang-label"><span data-i18n="label.lang">语言</span>
+        <select id="lang-select"></select>
+      </label>
     </header>
     <!-- Export progress overlay -->
     <div id="export-overlay" class="export-overlay hidden">
       <div class="export-dialog">
-        <div class="export-title">导出中…</div>
+        <div class="export-title" data-i18n="export.title">导出中…</div>
         <progress id="export-progress" max="100" value="0"></progress>
-        <div id="export-status">准备中…</div>
-        <button id="export-cancel">取消</button>
+        <div id="export-status" data-i18n="export.preparing">准备中…</div>
+        <button id="export-cancel" data-i18n="export.cancel">取消</button>
       </div>
     </div>
     <div id="main-content">
       <aside id="panel-images" class="filter-panel">
         <div class="panel-header">
-          <span>Images</span>
+          <span data-i18n="panel.images">Images</span>
           <div class="panel-btns">
-            <button id="btn-img-all" title="全选">全选</button>
-            <button id="btn-img-none" title="全不选">全不选</button>
+            <button id="btn-img-all" data-i18n="btn.selectAll" data-i18n-title="btn.selectAll.title" title="全选">全选</button>
+            <button id="btn-img-none" data-i18n="btn.selectNone" data-i18n-title="btn.selectNone.title" title="全不选">全不选</button>
           </div>
         </div>
         <div class="panel-filter-row">
-          <input id="img-regex" type="text" placeholder="正则过滤…" title="输入正则表达式过滤 Image">
+          <input id="img-regex" type="text" data-i18n-placeholder="filter.image.placeholder" data-i18n-title="filter.image.title" placeholder="正则过滤…" title="输入正则表达式过滤 Image">
         </div>
         <ul id="image-list" class="filter-list"></ul>
       </aside>
@@ -88,21 +107,24 @@
       <div id="resize-handle-right" class="resize-handle"></div>
       <aside id="panel-sprites" class="filter-panel">
         <div class="panel-header">
-          <span>Sprites</span>
+          <span data-i18n="panel.sprites">Sprites</span>
           <div class="panel-btns">
-            <button id="btn-spr-all" title="全选">全选</button>
-            <button id="btn-spr-none" title="全不选">全不选</button>
+            <button id="btn-spr-all" data-i18n="btn.selectAll" data-i18n-title="btn.selectAll.title" title="全选">全选</button>
+            <button id="btn-spr-none" data-i18n="btn.selectNone" data-i18n-title="btn.selectNone.title" title="全不选">全不选</button>
           </div>
         </div>
         <div class="panel-filter-row">
-          <input id="spr-regex" type="text" placeholder="正则过滤…" title="输入正则表达式过滤 Sprite">
+          <input id="spr-regex" type="text" data-i18n-placeholder="filter.sprite.placeholder" data-i18n-title="filter.sprite.title" placeholder="正则过滤…" title="输入正则表达式过滤 Sprite">
         </div>
         <ul id="sprite-list" class="filter-list"></ul>
       </aside>
     </div>
     <footer id="statusbar">
-      <span id="status-text">拖放包含 .pam.json 和 PNG 的文件夹到画布区域，或点击 📂 加载</span>
+      <span id="status-text" data-i18n="status.hint">拖放包含 .pam.json 和 PNG 的文件夹到画布区域，或点击 📂 加载</span>
+      <span id="anim-size-display"></span>
+      <span id="coord-display"></span>
       <span id="zoom-display">100%</span>
+      <a id="author-link" href="https://space.bilibili.com/8217621" target="_blank" rel="noopener">by LambdaEd1th</a>
     </footer>
   </div>
   <script type="module" src="main.js"></script>
