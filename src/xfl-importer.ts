@@ -140,8 +140,9 @@ function parseSource(xmlText: string): { name: string; size: [number, number] } 
   const libItem = bmpInst.getAttribute('libraryItemName') || '';
   const name = pamName || libItem.replace(/^media\//, '');
 
+  const dimSource = name.split('|')[0];
   const dimRe = /_(\d+)x(\d+)(?:_\d+)?$/;
-  const dimMatch = name.match(dimRe);
+  const dimMatch = dimSource.match(dimRe);
   const size: [number, number] = dimMatch ? [parseInt(dimMatch[1]), parseInt(dimMatch[2])] : [0, 0];
 
   return { name, size };

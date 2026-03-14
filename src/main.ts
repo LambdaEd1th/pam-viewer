@@ -319,8 +319,6 @@ async function loadFromFiles(files: File[]): Promise<void> {
     if (flaFile) {
       const buf = await flaFile.arrayBuffer();
       const result = await importFLA(buf);
-      console.log('[DEBUG] FLA imported. mediaPngs keys:', [...result.mediaPngs.keys()]);
-      console.log('[DEBUG] result.json images:', result.json.image?.length, 'sprites:', result.json.sprite?.length, 'mainSprite:', !!result.json.main_sprite);
       animation = parseAnimation(result.json);
       flaMediaPngs = result.mediaPngs;
       displayName = flaFile.name;
@@ -330,10 +328,7 @@ async function loadFromFiles(files: File[]): Promise<void> {
         const buf = await f.arrayBuffer();
         fileMap.set(f.name, new Uint8Array(buf));
       }
-      console.log('[DEBUG] XFL folder keys:', [...fileMap.keys()]);
       const result = importXFLFromFiles(fileMap);
-      console.log('[DEBUG] XFL imported. mediaPngs keys:', [...result.mediaPngs.keys()]);
-      console.log('[DEBUG] result.json images:', result.json.image?.length, 'sprites:', result.json.sprite?.length, 'mainSprite:', !!result.json.main_sprite);
       animation = parseAnimation(result.json);
       flaMediaPngs = result.mediaPngs;
       displayName = files[0]?.name?.split('/')[0] || 'XFL';
@@ -388,12 +383,9 @@ async function loadFromFiles(files: File[]): Promise<void> {
             const blob = new Blob([pngData as BlobPart], { type: 'image/png' });
             textures.set(img.name, await blobToImage(blob));
             loaded++;
-          } catch (e) { console.warn('[DEBUG] blobToImage failed for', name, e); }
+          } catch { /* skip */ }
           break;
         }
-      }
-      if (!textures.has(img.name)) {
-        console.warn('[DEBUG] mediaPng miss:', baseName, altName, '| available keys sample:', [...flaMediaPngs.keys()].slice(0, 5));
       }
       if (textures.has(img.name)) continue;
     }
