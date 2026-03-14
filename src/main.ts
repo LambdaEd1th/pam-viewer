@@ -191,11 +191,13 @@ document.body.appendChild(fileInput);
 interface FileSystemEntryLike {
   isFile: boolean;
   isDirectory: boolean;
+  fullPath?: string;
+  name?: string;
   file(success: (f: File) => void, error: (e: any) => void): void;
   createReader(): { readEntries(success: (entries: FileSystemEntryLike[]) => void, error: (e: any) => void): void };
 }
 
-async function readEntriesRecursive(directoryEntry: FileSystemEntryLike): Promise<File[]> {
+async function readEntriesRecursive(directoryEntry: FileSystemEntryLike, prefix = ''): Promise<File[]> {
   const files: File[] = [];
   const reader = directoryEntry.createReader();
   const readBatch = () => new Promise<FileSystemEntryLike[]>((resolve, reject) => {
@@ -207,9 +209,10 @@ async function readEntriesRecursive(directoryEntry: FileSystemEntryLike): Promis
     for (const entry of batch) {
       if (entry.isFile) {
         const file = await new Promise<File>((res, rej) => entry.file(res, rej));
-        files.push(file);
+        const path = prefix + file.name;
+        files.push(new File([file], path, { type: file.type, lastModified: file.lastModified }));
       } else if (entry.isDirectory) {
-        files.push(...await readEntriesRecursive(entry));
+        files.push(...await readEntriesRecursive(entry, prefix + (entry.name || '') + '/'));
       }
     }
   } while (batch.length > 0);
@@ -279,12 +282,13 @@ btnLoad.addEventListener('click', async () => {
   fileInput.click();
 });
 
-async function readDirectoryHandle(dirHandle: any, files: File[] = []): Promise<File[]> {
+async function readDirectoryHandle(dirHandle: any, prefix = '', files: File[] = []): Promise<File[]> {
   for await (const entry of dirHandle.values()) {
     if (entry.kind === 'file') {
-      files.push(await entry.getFile());
+      const f = await entry.getFile();
+      files.push(new File([f], prefix + f.name, { type: f.type, lastModified: f.lastModified }));
     } else if (entry.kind === 'directory') {
-      await readDirectoryHandle(entry, files);
+      await readDirectoryHandle(entry, prefix + entry.name + '/', files);
     }
   }
   return files;
