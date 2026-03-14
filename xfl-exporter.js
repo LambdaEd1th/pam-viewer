@@ -546,6 +546,7 @@ export async function exportFLA(animation, textures = null, resolution = 1200) {
   }
 
   // Include media PNGs if textures are available
+  let hasMedia = false;
   if (textures && textures.size > 0) {
     for (const img of animation.image) {
       const tex = textures.get(img.name);
@@ -553,7 +554,11 @@ export async function exportFLA(animation, textures = null, resolution = 1200) {
       const mediaName = img.name.split('|')[0];
       const pngData = await imageToPng(tex);
       zipEntries.push({ name: `LIBRARY/media/${mediaName}.png`, data: pngData });
+      hasMedia = true;
     }
+  }
+  if (!hasMedia) {
+    zipEntries.push({ name: 'LIBRARY/media/', data: new Uint8Array(0) });
   }
 
   const zipData = buildZip(zipEntries);
