@@ -1,17 +1,19 @@
-// pam-encoder.js — Encode raw PAM JSON to .pam binary format
-// Inverse of pam-decoder.js
+import type { RawPamJson } from './types';
 
 const PAM_MAGIC = 0xBAF01954;
 
 class BinaryWriter {
+  private chunks: Uint8Array[] = [];
+  private buf: ArrayBuffer;
+  private view: DataView;
+  private offset = 0;
+
   constructor() {
-    this.chunks = [];
     this.buf = new ArrayBuffer(4096);
     this.view = new DataView(this.buf);
-    this.offset = 0;
   }
 
-  _ensure(bytes) {
+  private ensure(bytes: number): void {
     if (this.offset + bytes > this.buf.byteLength) {
       this.chunks.push(new Uint8Array(this.buf, 0, this.offset));
       const newSize = Math.max(4096, bytes * 2);
@@ -21,21 +23,21 @@ class BinaryWriter {
     }
   }
 
-  writeU8(v) { this._ensure(1); this.view.setUint8(this.offset, v); this.offset += 1; }
-  writeI16(v) { this._ensure(2); this.view.setInt16(this.offset, v, true); this.offset += 2; }
-  writeU16(v) { this._ensure(2); this.view.setUint16(this.offset, v, true); this.offset += 2; }
-  writeI32(v) { this._ensure(4); this.view.setInt32(this.offset, v, true); this.offset += 4; }
-  writeU32(v) { this._ensure(4); this.view.setUint32(this.offset, v, true); this.offset += 4; }
+  writeU8(v: number): void { this.ensure(1); this.view.setUint8(this.offset, v); this.offset += 1; }
+  writeI16(v: number): void { this.ensure(2); this.view.setInt16(this.offset, v, true); this.offset += 2; }
+  writeU16(v: number): void { this.ensure(2); this.view.setUint16(this.offset, v, true); this.offset += 2; }
+  writeI32(v: number): void { this.ensure(4); this.view.setInt32(this.offset, v, true); this.offset += 4; }
+  writeU32(v: number): void { this.ensure(4); this.view.setUint32(this.offset, v, true); this.offset += 4; }
 
-  writeString(s) {
+  writeString(s: string): void {
     const bytes = new TextEncoder().encode(s);
     this.writeU16(bytes.length);
-    this._ensure(bytes.length);
+    this.ensure(bytes.length);
     new Uint8Array(this.buf, this.offset, bytes.length).set(bytes);
     this.offset += bytes.length;
   }
 
-  toArrayBuffer() {
+  toArrayBuffer(): ArrayBuffer {
     this.chunks.push(new Uint8Array(this.buf, 0, this.offset));
     let total = 0;
     for (const c of this.chunks) total += c.length;
@@ -46,7 +48,7 @@ class BinaryWriter {
   }
 }
 
-function writeCount(w, n) {
+function writeCount(w: BinaryWriter, n: number): void {
   if (n < 0xFF) {
     w.writeU8(n);
   } else {
@@ -55,7 +57,13 @@ function writeCount(w, n) {
   }
 }
 
-function writeImage(w, img, version) {
+interface RawImg {
+  name: string;
+  size?: [number, number] | null;
+  transform: number[];
+}
+
+function writeImage(w: BinaryWriter, img: RawImg, version: number): void {
   w.writeString(img.name);
   if (version >= 4) {
     w.writeI16(img.size ? img.size[0] : 0);
@@ -64,21 +72,18 @@ function writeImage(w, img, version) {
 
   const t = img.transform;
   if (version === 1) {
-    // rotate_translate: [angle, x, y]
     w.writeU16(Math.round(t[0] * 1000));
     w.writeI16(Math.round(t[1] * 20));
     w.writeI16(Math.round(t[2] * 20));
   } else {
-    // matrix_translate: [a, b, c, d, x, y]
     if (t.length === 6) {
-      w.writeI32(Math.round(t[0] * 1310720)); // a
-      w.writeI32(Math.round(t[2] * 1310720)); // c (note: binary order is a,c,b,d)
-      w.writeI32(Math.round(t[1] * 1310720)); // b
-      w.writeI32(Math.round(t[3] * 1310720)); // d
-      w.writeI16(Math.round(t[4] * 20));      // x
-      w.writeI16(Math.round(t[5] * 20));      // y
+      w.writeI32(Math.round(t[0] * 1310720));
+      w.writeI32(Math.round(t[2] * 1310720));
+      w.writeI32(Math.round(t[1] * 1310720));
+      w.writeI32(Math.round(t[3] * 1310720));
+      w.writeI16(Math.round(t[4] * 20));
+      w.writeI16(Math.round(t[5] * 20));
     } else if (t.length === 3) {
-      // rotate_translate stored as matrix for version >= 2
       const angle = t[0];
       const cos = Math.cos(angle);
       const sin = Math.sin(angle);
@@ -89,7 +94,6 @@ function writeImage(w, img, version) {
       w.writeI16(Math.round(t[1] * 20));
       w.writeI16(Math.round(t[2] * 20));
     } else {
-      // translate only → identity matrix
       w.writeI32(Math.round(1.0 * 1310720));
       w.writeI32(0);
       w.writeI32(0);
@@ -100,7 +104,7 @@ function writeImage(w, img, version) {
   }
 }
 
-function needsLongCoords(transform) {
+function needsLongCoords(transform: number[]): boolean {
   const x = transform[transform.length - 2];
   const y = transform[transform.length - 1];
   const xVal = Math.round(x * 20);
@@ -108,7 +112,30 @@ function needsLongCoords(transform) {
   return xVal < -32768 || xVal > 32767 || yVal < -32768 || yVal > 32767;
 }
 
-function writeFrame(w, frame, version) {
+interface RawFrameEnc {
+  label?: string | null;
+  stop?: boolean;
+  command?: [string, string][];
+  remove?: { index: number }[];
+  append?: {
+    index: number;
+    resource: number;
+    sprite: boolean;
+    additive?: boolean;
+    preload_frame?: number;
+    name?: string;
+    time_scale?: number;
+  }[];
+  change?: {
+    index: number;
+    transform: number[];
+    color?: number[];
+    sprite_frame_number?: number;
+    source_rectangle?: number[];
+  }[];
+}
+
+function writeFrame(w: BinaryWriter, frame: RawFrameEnc, version: number): void {
   const hasRemoves  = frame.remove && frame.remove.length > 0;
   const hasAppends  = frame.append && frame.append.length > 0;
   const hasChanges  = frame.change && frame.change.length > 0;
@@ -125,10 +152,9 @@ function writeFrame(w, frame, version) {
   if (hasCommands) flags |= 0x20;
   w.writeU8(flags);
 
-  // Removes
   if (hasRemoves) {
-    writeCount(w, frame.remove.length);
-    for (const r of frame.remove) {
+    writeCount(w, frame.remove!.length);
+    for (const r of frame.remove!) {
       if (r.index >= 0x7FF) {
         w.writeU16(0x7FF);
         w.writeI32(r.index);
@@ -138,10 +164,9 @@ function writeFrame(w, frame, version) {
     }
   }
 
-  // Appends
   if (hasAppends) {
-    writeCount(w, frame.append.length);
-    for (const a of frame.append) {
+    writeCount(w, frame.append!.length);
+    for (const a of frame.append!) {
       const hasTimeScale    = a.time_scale !== undefined && a.time_scale !== 1.0;
       const hasName         = a.name !== undefined;
       const hasPreloadFrame = a.preload_frame !== undefined && a.preload_frame !== 0;
@@ -171,16 +196,15 @@ function writeFrame(w, frame, version) {
         w.writeU8(a.resource);
       }
 
-      if (hasPreloadFrame) w.writeU16(a.preload_frame);
-      if (hasName) w.writeString(a.name);
-      if (hasTimeScale) w.writeI32(Math.round(a.time_scale * 65536));
+      if (hasPreloadFrame) w.writeU16(a.preload_frame!);
+      if (hasName) w.writeString(a.name!);
+      if (hasTimeScale) w.writeI32(Math.round(a.time_scale! * 65536));
     }
   }
 
-  // Changes
   if (hasChanges) {
-    writeCount(w, frame.change.length);
-    for (const c of frame.change) {
+    writeCount(w, frame.change!.length);
+    for (const c of frame.change!) {
       const t = c.transform;
       const isMatrix  = t.length === 6;
       const isRotate  = t.length === 3;
@@ -202,12 +226,11 @@ function writeFrame(w, frame, version) {
 
       if (needsExtIndex) w.writeI32(c.index);
 
-      // Transform
       if (isMatrix) {
-        w.writeI32(Math.round(t[0] * 65536)); // a
-        w.writeI32(Math.round(t[2] * 65536)); // c
-        w.writeI32(Math.round(t[1] * 65536)); // b
-        w.writeI32(Math.round(t[3] * 65536)); // d
+        w.writeI32(Math.round(t[0] * 65536));
+        w.writeI32(Math.round(t[2] * 65536));
+        w.writeI32(Math.round(t[1] * 65536));
+        w.writeI32(Math.round(t[3] * 65536));
       } else if (isRotate) {
         w.writeI16(Math.round(t[0] * 1000));
       }
@@ -221,42 +244,49 @@ function writeFrame(w, frame, version) {
       }
 
       if (hasSrcRect) {
-        w.writeI16(Math.round(c.source_rectangle[0] * 20));
-        w.writeI16(Math.round(c.source_rectangle[1] * 20));
-        w.writeI16(Math.round(c.source_rectangle[2] * 20));
-        w.writeI16(Math.round(c.source_rectangle[3] * 20));
+        w.writeI16(Math.round(c.source_rectangle![0] * 20));
+        w.writeI16(Math.round(c.source_rectangle![1] * 20));
+        w.writeI16(Math.round(c.source_rectangle![2] * 20));
+        w.writeI16(Math.round(c.source_rectangle![3] * 20));
       }
 
       if (hasColor) {
-        w.writeU8(Math.round(c.color[0] * 255));
-        w.writeU8(Math.round(c.color[1] * 255));
-        w.writeU8(Math.round(c.color[2] * 255));
-        w.writeU8(Math.round(c.color[3] * 255));
+        w.writeU8(Math.round(c.color![0] * 255));
+        w.writeU8(Math.round(c.color![1] * 255));
+        w.writeU8(Math.round(c.color![2] * 255));
+        w.writeU8(Math.round(c.color![3] * 255));
       }
 
       if (hasAnimFrameNum) {
-        w.writeU16(c.sprite_frame_number);
+        w.writeU16(c.sprite_frame_number!);
       }
     }
   }
 
-  if (hasLabel) w.writeString(frame.label);
+  if (hasLabel) w.writeString(frame.label!);
 
   if (hasCommands) {
-    w.writeU8(frame.command.length);
-    for (const [cmd, arg] of frame.command) {
+    w.writeU8(frame.command!.length);
+    for (const [cmd, arg] of frame.command!) {
       w.writeString(cmd);
       w.writeString(arg);
     }
   }
 }
 
-function writeSprite(w, sprite, version) {
+interface RawSpriteEnc {
+  name?: string | null;
+  frame_rate?: number | null;
+  work_area?: [number, number] | null;
+  frame: RawFrameEnc[];
+}
+
+function writeSprite(w: BinaryWriter, sprite: RawSpriteEnc, version: number): void {
   if (version >= 4) {
     w.writeString(sprite.name || '');
   }
   if (version >= 6) {
-    w.writeString(''); // description (unused)
+    w.writeString('');
   }
   if (version >= 4) {
     w.writeI32(Math.round((sprite.frame_rate ?? 0) * 65536));
@@ -276,12 +306,7 @@ function writeSprite(w, sprite, version) {
   }
 }
 
-/**
- * Encode a raw PAM JSON object to .pam binary format.
- * @param {object} raw — raw JSON (same structure as decodePAM output)
- * @returns {ArrayBuffer}
- */
-export function encodePAM(raw) {
+export function encodePAM(raw: RawPamJson): ArrayBuffer {
   const w = new BinaryWriter();
   const version = raw.version ?? 6;
 
@@ -302,17 +327,17 @@ export function encodePAM(raw) {
   const sprites = raw.sprite || [];
   w.writeU16(sprites.length);
   for (const sp of sprites) {
-    writeSprite(w, sp, version);
+    writeSprite(w, sp as unknown as RawSpriteEnc, version);
   }
 
   if (version <= 3) {
     if (raw.main_sprite) {
-      writeSprite(w, raw.main_sprite, version);
+      writeSprite(w, raw.main_sprite as unknown as RawSpriteEnc, version);
     }
   } else {
     if (raw.main_sprite) {
       w.writeU8(1);
-      writeSprite(w, raw.main_sprite, version);
+      writeSprite(w, raw.main_sprite as unknown as RawSpriteEnc, version);
     } else {
       w.writeU8(0);
     }

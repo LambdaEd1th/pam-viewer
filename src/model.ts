@@ -1,11 +1,6 @@
-// PAM animation data model — ported from Twinning's model.dart
+import type { Transform, Matrix6, Color, Animation, Sprite, Frame, FrameLabel } from './types';
 
-/**
- * Parse image file name: strip (…), $prefix, […], |suffix
- * @param {string} value
- * @returns {string}
- */
-export function parseImageFileName(value) {
+export function parseImageFileName(value: string): string {
   let result = value;
   const a1 = result.indexOf('(');
   const a2 = result.indexOf(')');
@@ -28,13 +23,7 @@ export function parseImageFileName(value) {
   return result;
 }
 
-/**
- * Parse variant transform from array.
- * length 2 → translate, 3 → rotate+translate, 6 → full matrix
- * @param {number[]} list
- * @returns {{type: string, values: number[]}}
- */
-export function parseTransform(list) {
+export function parseTransform(list: number[]): Transform {
   switch (list.length) {
     case 2: return { type: 'translate', x: list[0], y: list[1] };
     case 3: return { type: 'rotate_translate', angle: list[0], x: list[1], y: list[2] };
@@ -43,13 +32,7 @@ export function parseTransform(list) {
   }
 }
 
-/**
- * Build a 2D affine matrix [a,b,c,d,tx,ty] from a variant transform.
- * Returns a DOMMatrix-compatible 6-element array for ctx.setTransform().
- * @param {object} t
- * @returns {number[]} [a, b, c, d, e, f]
- */
-export function transformToMatrix(t) {
+export function transformToMatrix(t: Transform): Matrix6 {
   switch (t.type) {
     case 'translate':
       return [1, 0, 0, 1, t.x, t.y];
@@ -60,18 +43,10 @@ export function transformToMatrix(t) {
     }
     case 'matrix_translate':
       return [t.a, t.b, t.c, t.d, t.x, t.y];
-    default:
-      return [1, 0, 0, 1, 0, 0];
   }
 }
 
-/**
- * Multiply two 2D affine matrices represented as [a,b,c,d,e,f].
- * @param {number[]} p - parent
- * @param {number[]} c - child
- * @returns {number[]}
- */
-export function multiplyMatrix(p, c) {
+export function multiplyMatrix(p: Matrix6, c: Matrix6): Matrix6 {
   return [
     p[0] * c[0] + p[2] * c[1],
     p[1] * c[0] + p[3] * c[1],
@@ -82,13 +57,7 @@ export function multiplyMatrix(p, c) {
   ];
 }
 
-/**
- * Multiply two RGBA color tints (each component 0..1).
- * @param {{r:number,g:number,b:number,a:number}} parent
- * @param {{r:number,g:number,b:number,a:number}} child
- * @returns {{r:number,g:number,b:number,a:number}}
- */
-export function multiplyColor(parent, child) {
+export function multiplyColor(parent: Color, child: Color): Color {
   return {
     r: parent.r * child.r,
     g: parent.g * child.g,
@@ -97,18 +66,14 @@ export function multiplyColor(parent, child) {
   };
 }
 
-/**
- * Parse a .pam.json object into a normalized Animation structure.
- * @param {object} json
- * @returns {object}
- */
-export function parseAnimation(json) {
-  const parseFrame = (f) => ({
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export function parseAnimation(json: any): Animation {
+  const parseFrame = (f: any): Frame => ({
     label: f.label ?? null,
     stop: f.stop ?? false,
-    command: (f.command ?? []).map(c => ({ command: c[0], argument: c[1] })),
-    remove: (f.remove ?? []).map(r => ({ index: r.index })),
-    append: (f.append ?? []).map(a => ({
+    command: (f.command ?? []).map((c: [string, string]) => ({ command: c[0], argument: c[1] })),
+    remove: (f.remove ?? []).map((r: any) => ({ index: r.index })),
+    append: (f.append ?? []).map((a: any) => ({
       index: a.index,
       name: a.name ?? null,
       resource: a.resource,
@@ -117,7 +82,7 @@ export function parseAnimation(json) {
       preloadFrame: a.preload_frame ?? 0,
       timeScale: a.time_scale ?? 1.0,
     })),
-    change: (f.change ?? []).map(c => ({
+    change: (f.change ?? []).map((c: any) => ({
       index: c.index,
       transform: parseTransform(c.transform),
       color: c.color ? { r: c.color[0], g: c.color[1], b: c.color[2], a: c.color[3] } : null,
@@ -126,7 +91,7 @@ export function parseAnimation(json) {
     })),
   });
 
-  const parseSprite = (s) => ({
+  const parseSprite = (s: any): Sprite => ({
     name: s.name ?? null,
     frameRate: s.frame_rate ?? null,
     workArea: s.work_area ? { start: s.work_area[0], duration: s.work_area[1] } : null,
@@ -138,7 +103,7 @@ export function parseAnimation(json) {
     frameRate: json.frame_rate,
     position: json.position,
     size: json.size,
-    image: (json.image ?? []).map(img => ({
+    image: (json.image ?? []).map((img: any) => ({
       name: img.name,
       size: img.size ? { width: img.size[0], height: img.size[1] } : null,
       transform: parseTransform(img.transform),
@@ -148,25 +113,16 @@ export function parseAnimation(json) {
   };
 }
 
-/**
- * Extract frame labels from a sprite.
- * @param {object} sprite
- * @returns {{name: string, begin: number, end: number}[]}
- */
-export function parseSpriteFrameLabels(sprite) {
-  const result = [];
-  const current = [];
+export function parseSpriteFrameLabels(sprite: Sprite): FrameLabel[] {
+  const labels: FrameLabel[] = [];
   for (let i = 0; i < sprite.frame.length; i++) {
-    const frame = sprite.frame[i];
-    if (frame.label != null) {
-      current.push({ name: frame.label, begin: i });
-    }
-    if (frame.stop) {
-      for (const item of current) {
-        result.push({ name: item.name, begin: item.begin, end: i });
+    const f = sprite.frame[i];
+    if (f.label != null) {
+      if (labels.length > 0) {
+        labels[labels.length - 1].end = i - 1;
       }
-      current.length = 0;
+      labels.push({ name: f.label, begin: i, end: sprite.frame.length - 1 });
     }
   }
-  return result;
+  return labels;
 }

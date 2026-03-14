@@ -1,64 +1,84 @@
-// XFL/FLA exporter — converts normalized PAM animation to Adobe Flash XFL format
-// Ported from pvz2-toolkit Rust encoder (core/pam/src/xfl/encoder.rs)
-
-import { transformToMatrix } from './model.js';
+import { transformToMatrix } from './model';
+import type { Animation, Matrix6 } from './types';
 
 const XFL_NS = 'http://ns.adobe.com/xfl/2008/';
 const XSI_NS = 'http://www.w3.org/2001/XMLSchema-instance';
 
-function fmt(f) { return f.toFixed(6); }
+function fmt(f: number): string { return f.toFixed(6); }
 
-// ── Minimal XML builder ──
 class XmlBuilder {
-  constructor() { this.parts = []; this.indent = 0; }
-  _pad() { return '\t'.repeat(this.indent); }
-  open(tag, attrs = {}) {
+  private parts: string[] = [];
+  private _indent = 0;
+  private _pad(): string { return '\t'.repeat(this._indent); }
+
+  open(tag: string, attrs: Record<string, string | number> = {}): void {
     let s = `${this._pad()}<${tag}`;
-    for (const [k, v] of Object.entries(attrs)) s += ` ${k}="${escXml(v)}"`;
+    for (const [k, v] of Object.entries(attrs)) s += ` ${k}="${escXml(String(v))}"`;
     s += '>';
     this.parts.push(s);
-    this.indent++;
+    this._indent++;
   }
-  close(tag) { this.indent--; this.parts.push(`${this._pad()}</${tag}>`); }
-  selfClose(tag, attrs = {}) {
+
+  close(tag: string): void { this._indent--; this.parts.push(`${this._pad()}</${tag}>`); }
+
+  selfClose(tag: string, attrs: Record<string, string | number> = {}): void {
     let s = `${this._pad()}<${tag}`;
-    for (const [k, v] of Object.entries(attrs)) s += ` ${k}="${escXml(v)}"`;
+    for (const [k, v] of Object.entries(attrs)) s += ` ${k}="${escXml(String(v))}"`;
     s += '/>';
     this.parts.push(s);
   }
-  raw(text) { this.parts.push(text); }
-  toString() { return this.parts.join('\n'); }
+
+  raw(text: string): void { this.parts.push(text); }
+  toString(): string { return this.parts.join('\n'); }
 }
-function escXml(s) {
-  return String(s).replace(/&/g, '&amp;').replace(/"/g, '&quot;')
+
+function escXml(s: string): string {
+  return s.replace(/&/g, '&amp;').replace(/"/g, '&quot;')
     .replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
 
-// ── Transform helpers ──
-function toMatrix6(t) { return transformToMatrix(t); }
-function matrixAttrs(m) {
+function toMatrix6(t: Animation['image'][0]['transform']): Matrix6 { return transformToMatrix(t); }
+
+function matrixAttrs(m: Matrix6): Record<string, string> {
   return { a: fmt(m[0]), b: fmt(m[1]), c: fmt(m[2]), d: fmt(m[3]), tx: fmt(m[4]), ty: fmt(m[5]) };
 }
 
-// ── Frame node list builder (ported from Rust decode_frame_node_list) ──
-function buildFrameNodeList(sprite) {
-  const nodeList = new Map(); // layerIdx -> DomFrameData[]
-  const model = new Map();    // layerIdx -> ElementData
+interface DomFrameData {
+  startFrame: number;
+  duration: number;
+  element: {
+    resource: number;
+    isSprite: boolean;
+    transform: Matrix6;
+    color: [number, number, number, number];
+  } | null;
+}
+
+interface ElementData {
+  state: string | null;
+  resource: number;
+  isSprite: boolean;
+  transform: Matrix6;
+  color: [number, number, number, number];
+  frameStart: number;
+  frameDuration: number;
+}
+
+function buildFrameNodeList(sprite: Animation['sprite'][0]): Map<number, DomFrameData[]> {
+  const nodeList = new Map<number, DomFrameData[]>();
+  const model = new Map<number, ElementData>();
   const totalFrames = sprite.frame.length;
 
-  // Layer 0: empty container spanning all frames
   nodeList.set(0, [{ startFrame: 0, duration: totalFrames, element: null }]);
 
   for (let i = 0; i < totalFrames; i++) {
     const frame = sprite.frame[i];
 
-    // Removes
     for (const rm of frame.remove) {
       const m = model.get(rm.index);
       if (m) m.state = 'removed';
     }
 
-    // Appends
     for (const ap of frame.append) {
       model.set(ap.index, {
         state: null,
@@ -72,11 +92,10 @@ function buildFrameNodeList(sprite) {
       const layerIdx = ap.index + 1;
       if (!nodeList.has(layerIdx)) nodeList.set(layerIdx, []);
       if (i > 0) {
-        nodeList.get(layerIdx).push({ startFrame: 0, duration: i, element: null });
+        nodeList.get(layerIdx)!.push({ startFrame: 0, duration: i, element: null });
       }
     }
 
-    // Changes
     for (const ch of frame.change) {
       const layer = model.get(ch.index);
       if (!layer) continue;
@@ -87,8 +106,7 @@ function buildFrameNodeList(sprite) {
       }
     }
 
-    // Flush
-    const keysToRemove = [];
+    const keysToRemove: number[] = [];
     for (const [layerIndex, layer] of model) {
       const nl = nodeList.get(layerIndex + 1) || [];
       if (!nodeList.has(layerIndex + 1)) nodeList.set(layerIndex + 1, nl);
@@ -104,8 +122,8 @@ function buildFrameNodeList(sprite) {
           element: {
             resource: layer.resource,
             isSprite: layer.isSprite,
-            transform: [...layer.transform],
-            color: [...layer.color],
+            transform: [...layer.transform] as Matrix6,
+            color: [...layer.color] as [number, number, number, number],
           },
         });
         layer.state = null;
@@ -121,7 +139,6 @@ function buildFrameNodeList(sprite) {
     for (const k of keysToRemove) model.delete(k);
   }
 
-  // Close remaining
   for (const [layerIndex, layer] of model) {
     const nl = nodeList.get(layerIndex + 1);
     if (nl && nl.length > 0) {
@@ -132,8 +149,7 @@ function buildFrameNodeList(sprite) {
   return nodeList;
 }
 
-// ── Generate source_N.xml ──
-function genSource(index, image, resolution) {
+function genSource(index: number, image: Animation['image'][0], resolution: number): string {
   const x = new XmlBuilder();
   const name = `source/source_${index + 1}`;
   const mediaName = `media/${image.name.split('|')[0]}`;
@@ -163,8 +179,7 @@ function genSource(index, image, resolution) {
   return x.toString();
 }
 
-// ── Generate image_N.xml ──
-function genImage(index, image) {
+function genImage(index: number, image: Animation['image'][0]): string {
   const x = new XmlBuilder();
   const name = `image/image_${index + 1}`;
   const sourceName = `source/source_${index + 1}`;
@@ -194,8 +209,7 @@ function genImage(index, image) {
   return x.toString();
 }
 
-// ── Generate sprite_N.xml or main.xml ──
-function genSprite(index, sprite) {
+function genSprite(index: number, sprite: Animation['sprite'][0]): string {
   const isMain = index === -1;
   const name = isMain ? 'main' : `sprite/sprite_${index + 1}`;
   const tlName = isMain ? 'main' : `sprite_${index + 1}`;
@@ -212,7 +226,7 @@ function genSprite(index, sprite) {
   for (const layerIdx of sortedKeys) {
     x.open('DOMLayer', { name: String(layerIdx) });
     x.open('frames');
-    for (const frame of layers.get(layerIdx)) {
+    for (const frame of layers.get(layerIdx)!) {
       x.open('DOMFrame', { index: String(frame.startFrame), duration: String(frame.duration), keyMode: '9728' });
       x.open('elements');
       if (frame.element) {
@@ -221,7 +235,7 @@ function genSprite(index, sprite) {
           ? `sprite/sprite_${el.resource + 1}`
           : `image/image_${el.resource + 1}`;
 
-        const attrs = { libraryItemName: libName, symbolType: 'graphic', loop: 'loop' };
+        const attrs: Record<string, string> = { libraryItemName: libName, symbolType: 'graphic', loop: 'loop' };
         if (el.isSprite) attrs.firstFrame = '0';
 
         x.open('DOMSymbolInstance', attrs);
@@ -256,9 +270,8 @@ function genSprite(index, sprite) {
   return x.toString();
 }
 
-// ── Generate DOMDocument.xml ──
-function genDOMDocument(anim) {
-  const mainSprite = anim.mainSprite;
+function genDOMDocument(anim: Animation): string {
+  const mainSprite = anim.mainSprite!;
   const totalFrames = mainSprite.frame.length;
   const x = new XmlBuilder();
 
@@ -272,14 +285,12 @@ function genDOMDocument(anim) {
     objectsSnapTo: 'false',
   });
 
-  // Folders
   x.open('folders');
   for (const f of ['image', 'media', 'source', 'sprite']) {
     x.selfClose('DOMFolderItem', { name: f, isExpanded: 'true' });
   }
   x.close('folders');
 
-  // Media
   x.open('media');
   for (const img of anim.image) {
     const n = img.name.split('|')[0];
@@ -289,7 +300,6 @@ function genDOMDocument(anim) {
   }
   x.close('media');
 
-  // Symbols
   x.open('symbols');
   for (let i = 0; i < anim.image.length; i++) {
     x.selfClose('Include', { href: `source/source_${i + 1}.xml` });
@@ -301,12 +311,11 @@ function genDOMDocument(anim) {
   x.selfClose('Include', { href: 'LIBRARY/main.xml' });
   x.close('symbols');
 
-  // Timelines (3 layers: flow, command, sprite)
   x.open('timelines');
   x.open('DOMTimeline', { name: 'animation' });
   x.open('layers');
 
-  // --- flow layer ---
+  // flow layer
   x.open('DOMLayer', { name: 'flow' });
   x.open('frames');
   let prevFlow = -1;
@@ -316,7 +325,7 @@ function genDOMDocument(anim) {
       if (prevFlow + 1 < i) {
         x.selfClose('DOMFrame', { index: String(prevFlow + 1), duration: String(i - (prevFlow + 1)) });
       }
-      const attrs = { index: String(i) };
+      const attrs: Record<string, string> = { index: String(i) };
       if (f.label != null) { attrs.name = f.label; attrs.labelType = 'name'; }
       x.open('DOMFrame', attrs);
       x.open('elements'); x.close('elements');
@@ -337,7 +346,7 @@ function genDOMDocument(anim) {
   x.close('frames');
   x.close('DOMLayer');
 
-  // --- command layer ---
+  // command layer
   x.open('DOMLayer', { name: 'command' });
   x.open('frames');
   let prevCmd = -1;
@@ -368,7 +377,7 @@ function genDOMDocument(anim) {
   x.close('frames');
   x.close('DOMLayer');
 
-  // --- sprite layer ---
+  // sprite layer
   x.open('DOMLayer', { name: 'sprite' });
   x.open('frames');
   x.open('DOMFrame', { index: '0', duration: String(totalFrames) });
@@ -388,17 +397,31 @@ function genDOMDocument(anim) {
 }
 
 // ── ZIP writer (Store method, no compression) ──
-function buildZip(files) {
-  // files: [{name: string, data: Uint8Array}]
+
+const crc32Table = new Uint32Array(256);
+for (let i = 0; i < 256; i++) {
+  let c = i;
+  for (let j = 0; j < 8; j++) c = (c & 1) ? (0xEDB88320 ^ (c >>> 1)) : (c >>> 1);
+  crc32Table[i] = c;
+}
+
+function crc32(data: Uint8Array): number {
+  let crc = 0xFFFFFFFF;
+  for (let i = 0; i < data.length; i++) crc = crc32Table[(crc ^ data[i]) & 0xFF] ^ (crc >>> 8);
+  return (crc ^ 0xFFFFFFFF) >>> 0;
+}
+
+interface ZipEntry { name: string; data: string | Uint8Array; }
+
+function buildZip(files: ZipEntry[]): Uint8Array {
   const encoder = new TextEncoder();
   const entries = files.map(f => ({
     name: encoder.encode(f.name),
     data: typeof f.data === 'string' ? encoder.encode(f.data) : f.data,
   }));
 
-  // Calculate sizes
   let offset = 0;
-  const headers = [];
+  const headers: { offset: number; nameLen: number; dataLen: number }[] = [];
   for (const e of entries) {
     headers.push({ offset, nameLen: e.name.length, dataLen: e.data.length });
     offset += 30 + e.name.length + e.data.length;
@@ -413,86 +436,64 @@ function buildZip(files) {
   const bytes = new Uint8Array(buf);
   let pos = 0;
 
-  // Local file headers + data
   for (let i = 0; i < entries.length; i++) {
     const e = entries[i];
-    const crc = crc32(e.data);
-    view.setUint32(pos, 0x04034b50, true); pos += 4;  // signature
-    view.setUint16(pos, 20, true); pos += 2;           // version needed
-    view.setUint16(pos, 0, true); pos += 2;            // flags
-    view.setUint16(pos, 0, true); pos += 2;            // compression (store)
-    view.setUint16(pos, 0, true); pos += 2;            // mod time
-    view.setUint16(pos, 0x0021, true); pos += 2;       // mod date
-    view.setUint32(pos, crc, true); pos += 4;           // crc32
-    view.setUint32(pos, e.data.length, true); pos += 4; // compressed size
-    view.setUint32(pos, e.data.length, true); pos += 4; // uncompressed size
-    view.setUint16(pos, e.name.length, true); pos += 2; // name length
-    view.setUint16(pos, 0, true); pos += 2;             // extra length
+    const crcVal = crc32(e.data);
+    view.setUint32(pos, 0x04034b50, true); pos += 4;
+    view.setUint16(pos, 20, true); pos += 2;
+    view.setUint16(pos, 0, true); pos += 2;
+    view.setUint16(pos, 0, true); pos += 2;
+    view.setUint16(pos, 0, true); pos += 2;
+    view.setUint16(pos, 0x0021, true); pos += 2;
+    view.setUint32(pos, crcVal, true); pos += 4;
+    view.setUint32(pos, e.data.length, true); pos += 4;
+    view.setUint32(pos, e.data.length, true); pos += 4;
+    view.setUint16(pos, e.name.length, true); pos += 2;
+    view.setUint16(pos, 0, true); pos += 2;
     bytes.set(e.name, pos); pos += e.name.length;
     bytes.set(e.data, pos); pos += e.data.length;
   }
 
-  // Central directory
   for (let i = 0; i < entries.length; i++) {
     const e = entries[i];
     const h = headers[i];
-    const crc = crc32(e.data);
-    view.setUint32(pos, 0x02014b50, true); pos += 4;     // signature
-    view.setUint16(pos, 20, true); pos += 2;              // version made by
-    view.setUint16(pos, 20, true); pos += 2;              // version needed
-    view.setUint16(pos, 0, true); pos += 2;               // flags
-    view.setUint16(pos, 0, true); pos += 2;               // compression
-    view.setUint16(pos, 0, true); pos += 2;               // mod time
-    view.setUint16(pos, 0x0021, true); pos += 2;          // mod date
-    view.setUint32(pos, crc, true); pos += 4;              // crc32
-    view.setUint32(pos, e.data.length, true); pos += 4;   // compressed size
-    view.setUint32(pos, e.data.length, true); pos += 4;   // uncompressed size
-    view.setUint16(pos, e.name.length, true); pos += 2;   // name length
-    view.setUint16(pos, 0, true); pos += 2;               // extra field length
-    view.setUint16(pos, 0, true); pos += 2;               // comment length
-    view.setUint16(pos, 0, true); pos += 2;               // disk number
-    view.setUint16(pos, 0, true); pos += 2;               // internal attrs
-    view.setUint32(pos, 0, true); pos += 4;               // external attrs
-    view.setUint32(pos, h.offset, true); pos += 4;        // local header offset
+    const crcVal = crc32(e.data);
+    view.setUint32(pos, 0x02014b50, true); pos += 4;
+    view.setUint16(pos, 20, true); pos += 2;
+    view.setUint16(pos, 20, true); pos += 2;
+    view.setUint16(pos, 0, true); pos += 2;
+    view.setUint16(pos, 0, true); pos += 2;
+    view.setUint16(pos, 0, true); pos += 2;
+    view.setUint16(pos, 0x0021, true); pos += 2;
+    view.setUint32(pos, crcVal, true); pos += 4;
+    view.setUint32(pos, e.data.length, true); pos += 4;
+    view.setUint32(pos, e.data.length, true); pos += 4;
+    view.setUint16(pos, e.name.length, true); pos += 2;
+    view.setUint16(pos, 0, true); pos += 2;
+    view.setUint16(pos, 0, true); pos += 2;
+    view.setUint16(pos, 0, true); pos += 2;
+    view.setUint16(pos, 0, true); pos += 2;
+    view.setUint32(pos, 0, true); pos += 4;
+    view.setUint32(pos, h.offset, true); pos += 4;
     bytes.set(e.name, pos); pos += e.name.length;
   }
 
-  // End of central directory
   view.setUint32(pos, 0x06054b50, true); pos += 4;
-  view.setUint16(pos, 0, true); pos += 2;                 // disk number
-  view.setUint16(pos, 0, true); pos += 2;                 // disk with CD
-  view.setUint16(pos, entries.length, true); pos += 2;    // entries on disk
-  view.setUint16(pos, entries.length, true); pos += 2;    // total entries
-  view.setUint32(pos, centralSize, true); pos += 4;       // CD size
-  view.setUint32(pos, centralStart, true); pos += 4;      // CD offset
-  view.setUint16(pos, 0, true); pos += 2;                 // comment length
+  view.setUint16(pos, 0, true); pos += 2;
+  view.setUint16(pos, 0, true); pos += 2;
+  view.setUint16(pos, entries.length, true); pos += 2;
+  view.setUint16(pos, entries.length, true); pos += 2;
+  view.setUint32(pos, centralSize, true); pos += 4;
+  view.setUint32(pos, centralStart, true); pos += 4;
+  view.setUint16(pos, 0, true);
 
   return new Uint8Array(buf);
 }
 
-// CRC32 lookup table
-const crc32Table = new Uint32Array(256);
-for (let i = 0; i < 256; i++) {
-  let c = i;
-  for (let j = 0; j < 8; j++) c = (c & 1) ? (0xEDB88320 ^ (c >>> 1)) : (c >>> 1);
-  crc32Table[i] = c;
-}
-function crc32(data) {
-  let crc = 0xFFFFFFFF;
-  for (let i = 0; i < data.length; i++) crc = crc32Table[(crc ^ data[i]) & 0xFF] ^ (crc >>> 8);
-  return (crc ^ 0xFFFFFFFF) >>> 0;
-}
-
 // ── Public API ──
 
-/**
- * Export animation as an XFL directory (returns file map).
- * @param {object} animation - normalized animation from parseAnimation()
- * @param {number} [resolution=1200] - image resolution
- * @returns {Map<string, string>} filename -> content
- */
-export function generateXFL(animation, resolution = 1200) {
-  const files = new Map();
+export function generateXFL(animation: Animation, resolution = 1200): Map<string, string> {
+  const files = new Map<string, string>();
 
   files.set('main.xfl', 'PROXY-CS5');
   files.set('DOMDocument.xml', genDOMDocument(animation));
@@ -513,39 +514,30 @@ export function generateXFL(animation, resolution = 1200) {
   return files;
 }
 
-/**
- * Convert an HTMLImageElement to PNG Uint8Array via offscreen canvas.
- * @param {HTMLImageElement} img
- * @returns {Promise<Uint8Array>}
- */
-function imageToPng(img) {
+function imageToPng(img: HTMLImageElement): Promise<Uint8Array> {
   return new Promise((resolve) => {
     const cvs = document.createElement('canvas');
     cvs.width = img.naturalWidth || img.width;
     cvs.height = img.naturalHeight || img.height;
-    const ctx = cvs.getContext('2d');
+    const ctx = cvs.getContext('2d')!;
     ctx.drawImage(img, 0, 0);
     cvs.toBlob((blob) => {
-      blob.arrayBuffer().then(buf => resolve(new Uint8Array(buf)));
+      blob!.arrayBuffer().then(buf => resolve(new Uint8Array(buf)));
     }, 'image/png');
   });
 }
 
-/**
- * Export animation as an .fla file (ZIP containing XFL).
- * @param {object} animation - normalized animation from parseAnimation()
- * @param {Map<string, HTMLImageElement>} [textures] - loaded textures map (key = img.name)
- * @param {number} [resolution=1200]
- * @returns {Promise<Blob>}
- */
-export async function exportFLA(animation, textures = null, resolution = 1200) {
+export async function exportFLA(
+  animation: Animation,
+  textures: Map<string, HTMLImageElement> | null = null,
+  resolution = 1200,
+): Promise<Blob> {
   const xflFiles = generateXFL(animation, resolution);
-  const zipEntries = [];
+  const zipEntries: ZipEntry[] = [];
   for (const [name, data] of xflFiles) {
     zipEntries.push({ name, data });
   }
 
-  // Include media PNGs if textures are available
   let hasMedia = false;
   if (textures && textures.size > 0) {
     for (const img of animation.image) {
@@ -562,16 +554,13 @@ export async function exportFLA(animation, textures = null, resolution = 1200) {
   }
 
   const zipData = buildZip(zipEntries);
-  return new Blob([zipData], { type: 'application/octet-stream' });
+  return new Blob([zipData as BlobPart], { type: 'application/octet-stream' });
 }
 
-/**
- * Export animation as XFL directory (download as ZIP with .xfl extension).
- * @param {object} animation
- * @param {Map<string, HTMLImageElement>} [textures]
- * @param {number} [resolution=1200]
- * @returns {Promise<Blob>}
- */
-export function exportXFL(animation, textures = null, resolution = 1200) {
+export function exportXFL(
+  animation: Animation,
+  textures: Map<string, HTMLImageElement> | null = null,
+  resolution = 1200,
+): Promise<Blob> {
   return exportFLA(animation, textures, resolution);
 }

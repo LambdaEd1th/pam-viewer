@@ -1,33 +1,22 @@
-// PAM Viewer — main entry point
-// Features: drag-and-drop/button loading, frame slider, zoom/pan,
-// image/sprite filter panels, auto-play, settings persistence.
-
-import { parseAnimation, parseImageFileName, parseSpriteFrameLabels } from './model.js';
-import { buildAllTimelines, renderFrame } from './renderer.js';
-import { decodePAM } from './pam-decoder.js';
-import { encodePAM } from './pam-encoder.js';
-import { toRawJson } from './pam-serializer.js';
-import { exportFLA } from './xfl-exporter.js';
-import { importFLA, importXFLFromFiles } from './xfl-importer.js';
-import { t, getLang, setLang, onLangChange, getAvailableLangs, getLangLabel } from './i18n.js';
-
-let jsYaml = null;
-let smolToml = null;
-async function loadYaml() {
-  if (!jsYaml) jsYaml = await import('https://cdn.jsdelivr.net/npm/js-yaml@4/+esm');
-  return jsYaml;
-}
-async function loadToml() {
-  if (!smolToml) smolToml = await import('https://cdn.jsdelivr.net/npm/smol-toml@1/+esm');
-  return smolToml;
-}
+import './style.css';
+import { parseAnimation, parseImageFileName, parseSpriteFrameLabels } from './model';
+import { buildAllTimelines, renderFrame } from './renderer';
+import { decodePAM } from './pam-decoder';
+import { encodePAM } from './pam-encoder';
+import { toRawJson } from './pam-serializer';
+import { exportFLA } from './xfl-exporter';
+import { importFLA, importXFLFromFiles } from './xfl-importer';
+import { t, getLang, setLang, onLangChange, getAvailableLangs, getLangLabel } from './i18n';
+import * as jsYamlMod from 'js-yaml';
+import * as smolTomlMod from 'smol-toml';
+import type { Animation, TimelinesMap } from './types';
 
 // ── Settings persistence ──
 const SETTINGS_KEY = 'pam-viewer-settings';
 
-function loadSettings() {
+function loadSettings(): void {
   try {
-    const s = JSON.parse(localStorage.getItem(SETTINGS_KEY));
+    const s = JSON.parse(localStorage.getItem(SETTINGS_KEY) ?? 'null');
     if (!s) return;
     if (typeof s.loop === 'boolean') loopCheck.checked = s.loop;
     if (typeof s.autoPlay === 'boolean') autoplayCheck.checked = s.autoPlay;
@@ -39,7 +28,7 @@ function loadSettings() {
   } catch { /* ignore corrupt data */ }
 }
 
-function saveSettings() {
+function saveSettings(): void {
   localStorage.setItem(SETTINGS_KEY, JSON.stringify({
     loop: loopCheck.checked,
     autoPlay: autoplayCheck.checked,
@@ -52,120 +41,116 @@ function saveSettings() {
 }
 
 // ── DOM references ──
-const btnLoad = document.getElementById('btn-load');
-const btnClear = document.getElementById('btn-clear');
-const animName = document.getElementById('anim-name');
-const spriteSelect = document.getElementById('sprite-select');
-const labelSelect = document.getElementById('label-select');
-const btnPrev = document.getElementById('btn-prev');
-const btnPlay = document.getElementById('btn-play');
-const btnNext = document.getElementById('btn-next');
-const frameDisplay = document.getElementById('frame-display');
-const frameSlider = document.getElementById('frame-slider');
-const speedInput = document.getElementById('speed-input');
-const speedPresetBtn = document.getElementById('speed-preset-btn');
-const speedPresetMenu = document.getElementById('speed-preset-menu');
-const loopCheck = document.getElementById('loop-check');
-const reverseCheck = document.getElementById('reverse-check');
-const autoplayCheck = document.getElementById('autoplay-check');
-const keepSpeedCheck = document.getElementById('keep-speed-check');
-const boundaryCheck = document.getElementById('boundary-check');
-const rangeBeginInput = document.getElementById('range-begin');
-const rangeEndInput = document.getElementById('range-end');
-const btnToggleImages = document.getElementById('btn-toggle-images');
-const btnToggleSprites = document.getElementById('btn-toggle-sprites');
-const btnZoomReset = document.getElementById('btn-zoom-reset');
-const stageContainer = document.getElementById('stage-container');
-const canvas = document.getElementById('stage');
-const ctx = canvas.getContext('2d');
-const statusText = document.getElementById('status-text');
-const coordDisplay = document.getElementById('coord-display');
-const zoomDisplay = document.getElementById('zoom-display');
-const panelImages = document.getElementById('panel-images');
-const panelSprites = document.getElementById('panel-sprites');
-const imageList = document.getElementById('image-list');
-const spriteList = document.getElementById('sprite-list');
-const imgRegexInput = document.getElementById('img-regex');
-const sprRegexInput = document.getElementById('spr-regex');
-const resizeHandleLeft = document.getElementById('resize-handle-left');
-const resizeHandleRight = document.getElementById('resize-handle-right');
-const plantLayerSelect = document.getElementById('plant-layer-select');
-const zombieStateSelect = document.getElementById('zombie-state-select');
-const groundSwatchCheck = document.getElementById('ground-swatch-check');
-const btnExportPng = document.getElementById('btn-export-png');
-const btnExportApng = document.getElementById('btn-export-apng');
-const btnExportWebp = document.getElementById('btn-export-webp');
-const btnExportFla = document.getElementById('btn-export-fla');
-const btnConvertJson = document.getElementById('btn-convert-json');
-const btnConvertYaml = document.getElementById('btn-convert-yaml');
-const btnConvertToml = document.getElementById('btn-convert-toml');
-const btnConvertPam = document.getElementById('btn-convert-pam');
-const sizeWInput = document.getElementById('size-w');
-const sizeHInput = document.getElementById('size-h');
-const sizeScaleSelect = document.getElementById('size-scale');
-const animSizeDisplay = document.getElementById('anim-size-display');
-const exportOverlay = document.getElementById('export-overlay');
-const exportProgress = document.getElementById('export-progress');
-const exportStatus = document.getElementById('export-status');
-const exportCancelBtn = document.getElementById('export-cancel');
-const langSelect = document.getElementById('lang-select');
-const dropHint = document.getElementById('drop-hint');
+const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
+
+const btnLoad = $<HTMLButtonElement>('btn-load');
+const btnClear = $<HTMLButtonElement>('btn-clear');
+const animName = $<HTMLSpanElement>('anim-name');
+const spriteSelect = $<HTMLSelectElement>('sprite-select');
+const labelSelect = $<HTMLSelectElement>('label-select');
+const btnPrev = $<HTMLButtonElement>('btn-prev');
+const btnPlay = $<HTMLButtonElement>('btn-play');
+const btnNext = $<HTMLButtonElement>('btn-next');
+const frameDisplay = $<HTMLSpanElement>('frame-display');
+const frameSlider = $<HTMLInputElement>('frame-slider');
+const speedInput = $<HTMLInputElement>('speed-input');
+const speedPresetBtn = $<HTMLButtonElement>('speed-preset-btn');
+const speedPresetMenu = $<HTMLDivElement>('speed-preset-menu');
+const loopCheck = $<HTMLInputElement>('loop-check');
+const reverseCheck = $<HTMLInputElement>('reverse-check');
+const autoplayCheck = $<HTMLInputElement>('autoplay-check');
+const keepSpeedCheck = $<HTMLInputElement>('keep-speed-check');
+const boundaryCheck = $<HTMLInputElement>('boundary-check');
+const rangeBeginInput = $<HTMLInputElement>('range-begin');
+const rangeEndInput = $<HTMLInputElement>('range-end');
+const btnToggleImages = $<HTMLButtonElement>('btn-toggle-images');
+const btnToggleSprites = $<HTMLButtonElement>('btn-toggle-sprites');
+const btnZoomReset = $<HTMLButtonElement>('btn-zoom-reset');
+const stageContainer = $<HTMLDivElement>('stage-container');
+const canvas = $<HTMLCanvasElement>('stage');
+const ctx = canvas.getContext('2d')!;
+const statusText = $<HTMLSpanElement>('status-text');
+const coordDisplay = $<HTMLSpanElement>('coord-display');
+const zoomDisplay = $<HTMLSpanElement>('zoom-display');
+const panelImages = $<HTMLDivElement>('panel-images');
+const panelSprites = $<HTMLDivElement>('panel-sprites');
+const imageList = $<HTMLUListElement>('image-list');
+const spriteList = $<HTMLUListElement>('sprite-list');
+const imgRegexInput = $<HTMLInputElement>('img-regex');
+const sprRegexInput = $<HTMLInputElement>('spr-regex');
+const resizeHandleLeft = $<HTMLDivElement>('resize-handle-left');
+const resizeHandleRight = $<HTMLDivElement>('resize-handle-right');
+const plantLayerSelect = $<HTMLSelectElement>('plant-layer-select');
+const zombieStateSelect = $<HTMLSelectElement>('zombie-state-select');
+const groundSwatchCheck = $<HTMLInputElement>('ground-swatch-check');
+const btnExportPng = $<HTMLButtonElement>('btn-export-png');
+const btnExportApng = $<HTMLButtonElement>('btn-export-apng');
+const btnExportWebp = $<HTMLButtonElement>('btn-export-webp');
+const btnExportFla = $<HTMLButtonElement>('btn-export-fla');
+const btnConvertJson = $<HTMLButtonElement>('btn-convert-json');
+const btnConvertYaml = $<HTMLButtonElement>('btn-convert-yaml');
+const btnConvertToml = $<HTMLButtonElement>('btn-convert-toml');
+const btnConvertPam = $<HTMLButtonElement>('btn-convert-pam');
+const sizeWInput = $<HTMLInputElement>('size-w');
+const sizeHInput = $<HTMLInputElement>('size-h');
+const sizeScaleSelect = $<HTMLSelectElement>('size-scale');
+const animSizeDisplay = $<HTMLSpanElement>('anim-size-display');
+const exportOverlay = $<HTMLDivElement>('export-overlay');
+const exportProgress = $<HTMLProgressElement>('export-progress');
+const exportStatus = $<HTMLSpanElement>('export-status');
+const exportCancelBtn = $<HTMLButtonElement>('export-cancel');
+const langSelect = $<HTMLSelectElement>('lang-select');
+const dropHint = $<HTMLDivElement>('drop-hint');
 
 // ── State ──
-let animation = null;
-let textures = new Map();
-let spriteTimelines = null;
-let activeSprite = null;
+let animation: Animation | null = null;
+let textures = new Map<string, HTMLImageElement>();
+let spriteTimelines: TimelinesMap | null = null;
+let activeSprite: Animation['mainSprite'] = null;
 let activeSpriteIndex = -1;
-let frameLabels = [];
+let frameLabels: { name: string; begin: number; end: number }[] = [];
 let frameRange = { begin: 0, end: 0 };
 let currentFrame = 0;
 let playing = false;
 let lastTimestamp = 0;
 let accumulator = 0;
-let rafId = null;
+let rafId: number | null = null;
 
-// Zoom / Pan (in CSS pixels)
+// Zoom / Pan
 let zoom = 1.0;
 let panX = 0;
 let panY = 0;
 
 // Filters
-let imageFilter = [];
-let spriteFilter = [];
+let imageFilter: boolean[] = [];
+let spriteFilter: boolean[] = [];
 
-// Layer detection results (indices into animation.sprite)
-let plantCustomLayers = [];   // sprites whose name starts with "custom_"
-let zombieStateLayers = [];   // sprites named "ink" or "butter"
-let groundSwatchLayers = [];  // sprites named "ground_swatch" or "ground_swatch_plane"
+// Layer detection results
+let plantCustomLayers: number[] = [];
+let zombieStateLayers: number[] = [];
+let groundSwatchLayers: number[] = [];
 
 // ── i18n setup ──
-function applyI18n() {
-  // data-i18n: textContent
-  document.querySelectorAll('[data-i18n]').forEach(el => {
-    el.textContent = t(el.dataset.i18n);
+function applyI18n(): void {
+  document.querySelectorAll<HTMLElement>('[data-i18n]').forEach(el => {
+    el.textContent = t(el.dataset.i18n!);
   });
-  // data-i18n-title: title attribute
-  document.querySelectorAll('[data-i18n-title]').forEach(el => {
-    el.title = t(el.dataset.i18nTitle);
+  document.querySelectorAll<HTMLElement>('[data-i18n-title]').forEach(el => {
+    el.title = t(el.dataset.i18nTitle!);
   });
-  // data-i18n-placeholder: placeholder attribute
-  document.querySelectorAll('[data-i18n-placeholder]').forEach(el => {
-    el.placeholder = t(el.dataset.i18nPlaceholder);
+  document.querySelectorAll<HTMLElement>('[data-i18n-placeholder]').forEach(el => {
+    (el as HTMLInputElement).placeholder = t(el.dataset.i18nPlaceholder!);
   });
-  // data-i18n-text: first text node (label text before child elements)
-  document.querySelectorAll('[data-i18n-text]').forEach(el => {
+  document.querySelectorAll<HTMLElement>('[data-i18n-text]').forEach(el => {
     const first = el.firstChild;
-    const text = t(el.dataset.i18nText);
+    const text = t(el.dataset.i18nText!);
     if (first && first.nodeType === Node.TEXT_NODE) {
       first.textContent = text + '\n        ';
     }
   });
-  // Update anim-name if no animation loaded
   if (!animation) animName.textContent = t('anim.unloaded');
 }
 
-// Build language selector
 for (const lang of getAvailableLangs()) {
   const opt = document.createElement('option');
   opt.value = lang;
@@ -178,14 +163,12 @@ langSelect.addEventListener('change', () => setLang(langSelect.value));
 onLangChange(() => {
   applyI18n();
   langSelect.value = getLang();
-  if (animation) {
-    populateLabelSelect();
-  }
+  if (animation) populateLabelSelect();
 });
 applyI18n();
 
 // ── Canvas sizing ──
-function resizeCanvas() {
+function resizeCanvas(): void {
   const rect = stageContainer.getBoundingClientRect();
   const dpr = window.devicePixelRatio || 1;
   canvas.width = rect.width * dpr;
@@ -199,24 +182,31 @@ window.addEventListener('resize', resizeCanvas);
 // ── Hidden file input for fallback directory picking ──
 const fileInput = document.createElement('input');
 fileInput.type = 'file';
-fileInput.webkitdirectory = true;
+(fileInput as any).webkitdirectory = true;
 fileInput.multiple = true;
 fileInput.style.display = 'none';
 document.body.appendChild(fileInput);
 
 // ── Drag-and-drop helpers ──
-async function readEntriesRecursive(directoryEntry) {
-  const files = [];
+interface FileSystemEntryLike {
+  isFile: boolean;
+  isDirectory: boolean;
+  file(success: (f: File) => void, error: (e: any) => void): void;
+  createReader(): { readEntries(success: (entries: FileSystemEntryLike[]) => void, error: (e: any) => void): void };
+}
+
+async function readEntriesRecursive(directoryEntry: FileSystemEntryLike): Promise<File[]> {
+  const files: File[] = [];
   const reader = directoryEntry.createReader();
-  const readBatch = () => new Promise((resolve, reject) => {
+  const readBatch = () => new Promise<FileSystemEntryLike[]>((resolve, reject) => {
     reader.readEntries(resolve, reject);
   });
-  let batch;
+  let batch: FileSystemEntryLike[];
   do {
     batch = await readBatch();
     for (const entry of batch) {
       if (entry.isFile) {
-        const file = await new Promise((res, rej) => entry.file(res, rej));
+        const file = await new Promise<File>((res, rej) => entry.file(res, rej));
         files.push(file);
       } else if (entry.isDirectory) {
         files.push(...await readEntriesRecursive(entry));
@@ -226,12 +216,12 @@ async function readEntriesRecursive(directoryEntry) {
   return files;
 }
 
-async function collectFilesFromDataTransfer(dataTransfer) {
-  const allFiles = [];
-  const entries = [];
-  for (const item of dataTransfer.items) {
+async function collectFilesFromDataTransfer(dataTransfer: DataTransfer): Promise<File[]> {
+  const allFiles: File[] = [];
+  const entries: FileSystemEntryLike[] = [];
+  for (const item of Array.from(dataTransfer.items)) {
     if (item.kind !== 'file') continue;
-    const entry = item.webkitGetAsEntry?.() ?? item.getAsEntry?.();
+    const entry = (item as any).webkitGetAsEntry?.() ?? (item as any).getAsEntry?.();
     if (entry) {
       entries.push(entry);
     } else {
@@ -241,7 +231,7 @@ async function collectFilesFromDataTransfer(dataTransfer) {
   }
   for (const entry of entries) {
     if (entry.isFile) {
-      allFiles.push(await new Promise((res, rej) => entry.file(res, rej)));
+      allFiles.push(await new Promise<File>((res, rej) => entry.file(res, rej)));
     } else if (entry.isDirectory) {
       allFiles.push(...await readEntriesRecursive(entry));
     }
@@ -264,10 +254,10 @@ stageContainer.addEventListener('drop', async (e) => {
   e.stopPropagation();
   stageContainer.classList.remove('drag-over');
   try {
-    const files = await collectFilesFromDataTransfer(e.dataTransfer);
+    const files = await collectFilesFromDataTransfer(e.dataTransfer!);
     if (files.length === 0) { statusText.textContent = t('status.noFiles'); return; }
     await loadFromFiles(files);
-  } catch (err) {
+  } catch (err: any) {
     statusText.textContent = t('status.error', { message: err.message });
     console.error(err);
   }
@@ -275,13 +265,13 @@ stageContainer.addEventListener('drop', async (e) => {
 
 // ── Button click loading ──
 btnLoad.addEventListener('click', async () => {
-  if (typeof window.showDirectoryPicker === 'function') {
+  if (typeof (window as any).showDirectoryPicker === 'function') {
     try {
-      const dirHandle = await window.showDirectoryPicker();
+      const dirHandle = await (window as any).showDirectoryPicker();
       const files = await readDirectoryHandle(dirHandle);
       await loadFromFiles(files);
       return;
-    } catch (e) {
+    } catch (e: any) {
       if (e.name === 'AbortError') return;
     }
   }
@@ -289,7 +279,7 @@ btnLoad.addEventListener('click', async () => {
   fileInput.click();
 });
 
-async function readDirectoryHandle(dirHandle, files = []) {
+async function readDirectoryHandle(dirHandle: any, files: File[] = []): Promise<File[]> {
   for await (const entry of dirHandle.values()) {
     if (entry.kind === 'file') {
       files.push(await entry.getFile());
@@ -304,27 +294,24 @@ fileInput.addEventListener('change', async () => {
   if (!fileInput.files || fileInput.files.length === 0) return;
   try {
     await loadFromFiles(Array.from(fileInput.files));
-  } catch (e) {
+  } catch (e: any) {
     statusText.textContent = t('status.error', { message: e.message });
     console.error(e);
   }
 });
 
 // ── Core loading logic ──
-async function loadFromFiles(files) {
+async function loadFromFiles(files: File[]): Promise<void> {
   statusText.textContent = t('status.loading');
   stop();
 
-  // Detect FLA file (ZIP)
   const flaFile = files.find(f => /\.fla$/i.test(f.name));
-  // Detect XFL folder structure (DOMDocument.xml present among files)
   const hasXfl = !flaFile && files.some(f => /(?:^|[\/])DOMDocument\.xml$/i.test(f.name));
 
-  let flaMediaPngs = null; // Map<string, Uint8Array> from FLA/XFL import
+  let flaMediaPngs: Map<string, Uint8Array> | null = null;
   let displayName = '';
 
   if (flaFile || hasXfl) {
-    // --- FLA/XFL import path ---
     if (flaFile) {
       const buf = await flaFile.arrayBuffer();
       const result = await importFLA(buf);
@@ -332,8 +319,7 @@ async function loadFromFiles(files) {
       flaMediaPngs = result.mediaPngs;
       displayName = flaFile.name;
     } else {
-      // XFL folder: build file map from File objects
-      const fileMap = new Map();
+      const fileMap = new Map<string, Uint8Array>();
       for (const f of files) {
         const buf = await f.arrayBuffer();
         fileMap.set(f.name, new Uint8Array(buf));
@@ -344,14 +330,13 @@ async function loadFromFiles(files) {
       displayName = files[0]?.name?.split('/')[0] || 'XFL';
     }
   } else {
-    // --- PAM/JSON/YAML/TOML import path ---
     let pamJsonFile = files.find(f => /\.pam\.json$/i.test(f.name));
     if (!pamJsonFile) pamJsonFile = files.find(f => /\.json$/i.test(f.name));
     let pamYamlFile = files.find(f => /\.pam\.ya?ml$/i.test(f.name));
     if (!pamYamlFile) pamYamlFile = files.find(f => /\.ya?ml$/i.test(f.name));
     let pamTomlFile = files.find(f => /\.pam\.toml$/i.test(f.name));
     if (!pamTomlFile) pamTomlFile = files.find(f => /\.toml$/i.test(f.name));
-    let pamBinFile = files.find(f => /\.pam$/i.test(f.name) && !/\.json$/i.test(f.name) && !/\.ya?ml$/i.test(f.name) && !/\.toml$/i.test(f.name));
+    const pamBinFile = files.find(f => /\.pam$/i.test(f.name) && !/\.json$/i.test(f.name) && !/\.ya?ml$/i.test(f.name) && !/\.toml$/i.test(f.name));
 
     const sourceFile = pamJsonFile || pamYamlFile || pamTomlFile || pamBinFile;
     if (!sourceFile) { statusText.textContent = t('status.noPam'); return; }
@@ -361,21 +346,19 @@ async function loadFromFiles(files) {
       const text = await pamJsonFile.text();
       animation = parseAnimation(JSON.parse(text));
     } else if (pamYamlFile) {
-      const yaml = await loadYaml();
       const text = await pamYamlFile.text();
-      animation = parseAnimation(yaml.load(text));
+      animation = parseAnimation(jsYamlMod.load(text) as any);
     } else if (pamTomlFile) {
-      const toml = await loadToml();
       const text = await pamTomlFile.text();
-      animation = parseAnimation(toml.parse(text));
+      animation = parseAnimation(smolTomlMod.parse(text) as any);
     } else {
-      const buf = await pamBinFile.arrayBuffer();
+      const buf = await pamBinFile!.arrayBuffer();
       animation = parseAnimation(decodePAM(buf));
     }
   }
 
-  // Build PNG name map from file list
-  const pngMap = new Map();
+  // Build PNG name map
+  const pngMap = new Map<string, File>();
   for (const f of files) {
     if (/\.png$/i.test(f.name)) pngMap.set(f.name.toUpperCase(), f);
   }
@@ -383,18 +366,17 @@ async function loadFromFiles(files) {
   // Load textures
   textures = new Map();
   let loaded = 0;
-  for (const img of animation.image) {
+  for (const img of animation!.image) {
     const baseName = parseImageFileName(img.name);
     const pipeIdx = img.name.indexOf('|');
     const altName = pipeIdx !== -1 ? img.name.substring(pipeIdx + 1) : null;
 
-    // Try from FLA/XFL embedded media PNGs first
     if (flaMediaPngs) {
-      for (const name of [baseName, altName].filter(Boolean)) {
+      for (const name of [baseName, altName].filter(Boolean) as string[]) {
         const pngData = flaMediaPngs.get(name);
         if (pngData) {
           try {
-            const blob = new Blob([pngData], { type: 'image/png' });
+            const blob = new Blob([pngData as BlobPart], { type: 'image/png' });
             textures.set(img.name, await blobToImage(blob));
             loaded++;
           } catch { /* skip */ }
@@ -404,8 +386,7 @@ async function loadFromFiles(files) {
       if (textures.has(img.name)) continue;
     }
 
-    // Fall back to file list PNGs
-    for (const name of [baseName, altName].filter(Boolean)) {
+    for (const name of [baseName, altName].filter(Boolean) as string[]) {
       const pngFile = pngMap.get((name + '.png').toUpperCase());
       if (pngFile) {
         try { textures.set(img.name, await blobToImage(pngFile)); loaded++; }
@@ -415,48 +396,40 @@ async function loadFromFiles(files) {
     }
   }
 
-  // Build timelines
-  spriteTimelines = buildAllTimelines(animation);
+  spriteTimelines = buildAllTimelines(animation!);
 
-  // Reset zoom/pan
   zoom = 1.0;
   panX = 0;
   panY = 0;
   updateZoomDisplay();
 
-  // Init filters
-  imageFilter = animation.image.map(() => true);
-  spriteFilter = animation.sprite.map(() => true);
+  imageFilter = animation!.image.map(() => true);
+  spriteFilter = animation!.sprite.map(() => true);
 
-  // Populate UI
   animName.textContent = displayName;
   populateSpriteSelect();
   populateImagePanel();
   populateSpritePanel();
-
-  // Detect special layers (after panels populated so checkbox sync works)
   detectSpecialLayers();
 
-  speedInput.value = animation.frameRate;
+  speedInput.value = String(animation!.frameRate);
   speedInput.disabled = false;
 
-  // Init size controls
-  sizeWInput.value = animation.size[0];
-  sizeHInput.value = animation.size[1];
+  sizeWInput.value = String(animation!.size[0]);
+  sizeHInput.value = String(animation!.size[1]);
   sizeScaleSelect.value = '1';
   updateSizeDisplay();
 
-  // Auto-select mainSprite
-  if (animation.mainSprite) {
+  if (animation!.mainSprite) {
     spriteSelect.value = 'main';
     activateSprite(-1);
-  } else if (animation.sprite.length > 0) {
+  } else if (animation!.sprite.length > 0) {
     spriteSelect.value = '0';
     activateSprite(0);
   }
 
   btnClear.disabled = false;
-  statusText.textContent = t('status.loaded', { name: displayName, images: animation.image.length, loaded, sprites: animation.sprite.length });
+  statusText.textContent = t('status.loaded', { name: displayName, images: String(animation!.image.length), loaded: String(loaded), sprites: String(animation!.sprite.length) });
   dropHint.classList.add('hidden');
   resizeCanvas();
 }
@@ -479,8 +452,8 @@ btnClear.addEventListener('click', () => {
   groundSwatchLayers = [];
   zoom = 1.0; panX = 0; panY = 0;
   updateZoomDisplay();
-  sizeWInput.value = 0;
-  sizeHInput.value = 0;
+  sizeWInput.value = '0';
+  sizeHInput.value = '0';
   sizeScaleSelect.value = '1';
   updateSizeDisplay();
 
@@ -501,7 +474,7 @@ btnClear.addEventListener('click', () => {
   groundSwatchCheck.disabled = true;
   enableControls(false);
   frameSlider.disabled = true;
-  frameSlider.value = 0; frameSlider.max = 0;
+  frameSlider.value = '0'; frameSlider.max = '0';
   speedInput.disabled = true;
   rangeBeginInput.disabled = true;
   rangeEndInput.disabled = true;
@@ -509,13 +482,12 @@ btnClear.addEventListener('click', () => {
   frameDisplay.textContent = '0 / 0';
   statusText.textContent = t('status.hint');
 
-  const dpr = window.devicePixelRatio || 1;
   ctx.setTransform(1, 0, 0, 1, 0, 0);
   ctx.clearRect(0, 0, canvas.width, canvas.height);
   dropHint.classList.remove('hidden');
 });
 
-function blobToImage(fileOrBlob) {
+function blobToImage(fileOrBlob: Blob): Promise<HTMLImageElement> {
   return new Promise((resolve, reject) => {
     const url = URL.createObjectURL(fileOrBlob);
     const img = new Image();
@@ -526,15 +498,15 @@ function blobToImage(fileOrBlob) {
 }
 
 // ── Sprite selection ──
-function populateSpriteSelect() {
+function populateSpriteSelect(): void {
   spriteSelect.innerHTML = '';
-  if (animation.mainSprite) {
+  if (animation!.mainSprite) {
     const opt = document.createElement('option');
     opt.value = 'main';
-    opt.textContent = `MainSprite (${animation.mainSprite.frame.length} frames)`;
+    opt.textContent = `MainSprite (${animation!.mainSprite.frame.length} frames)`;
     spriteSelect.appendChild(opt);
   }
-  animation.sprite.forEach((sp, i) => {
+  animation!.sprite.forEach((sp, i) => {
     const opt = document.createElement('option');
     opt.value = String(i);
     opt.textContent = `${sp.name || 'sprite_' + i} (${sp.frame.length}f)`;
@@ -548,10 +520,10 @@ spriteSelect.addEventListener('change', () => {
   activateSprite(val === 'main' ? -1 : parseInt(val, 10));
 });
 
-function activateSprite(index) {
+function activateSprite(index: number): void {
   stop();
   activeSpriteIndex = index;
-  activeSprite = index === -1 ? animation.mainSprite : animation.sprite[index];
+  activeSprite = index === -1 ? animation!.mainSprite : animation!.sprite[index];
   if (!activeSprite || activeSprite.frame.length === 0) return;
 
   frameLabels = parseSpriteFrameLabels(activeSprite);
@@ -561,7 +533,7 @@ function activateSprite(index) {
   populateLabelSelect();
   enableControls(true);
   if (!keepSpeedCheck.checked) {
-    speedInput.value = activeSprite.frameRate ?? animation.frameRate;
+    speedInput.value = String((activeSprite as any).frameRate ?? animation!.frameRate);
   }
   updateSliderRange();
   updateRangeInputs();
@@ -569,17 +541,16 @@ function activateSprite(index) {
   highlightActiveSpriteInPanel();
   drawCurrentFrame();
 
-  // Auto-play
   if (autoplayCheck.checked) play();
 }
 
 // ── Label selection ──
-function populateLabelSelect() {
+function populateLabelSelect(): void {
   labelSelect.innerHTML = `<option value="all">${t('label.allFrames')}</option>`;
   for (const label of frameLabels) {
     const opt = document.createElement('option');
     opt.value = JSON.stringify({ begin: label.begin, end: label.end });
-    opt.textContent = `${label.name} [${label.begin}–${label.end}]`;
+    opt.textContent = `${label.name} [${label.begin}\u2013${label.end}]`;
     labelSelect.appendChild(opt);
   }
   labelSelect.disabled = false;
@@ -588,7 +559,7 @@ function populateLabelSelect() {
 labelSelect.addEventListener('change', () => {
   stop();
   if (labelSelect.value === 'all') {
-    frameRange = { begin: 0, end: activeSprite.frame.length - 1 };
+    frameRange = { begin: 0, end: activeSprite!.frame.length - 1 };
   } else {
     frameRange = JSON.parse(labelSelect.value);
   }
@@ -602,20 +573,19 @@ labelSelect.addEventListener('change', () => {
 // ── Frame slider ──
 let wasPlayingBeforeSlider = false;
 
-function updateSliderRange() {
-  frameSlider.min = frameRange.begin;
-  frameSlider.max = frameRange.end;
-  frameSlider.value = currentFrame;
+function updateSliderRange(): void {
+  frameSlider.min = String(frameRange.begin);
+  frameSlider.max = String(frameRange.end);
+  frameSlider.value = String(currentFrame);
   frameSlider.disabled = !activeSprite;
 }
 
-// ── Frame range inputs ──
-function updateRangeInputs() {
+function updateRangeInputs(): void {
   const maxFrame = activeSprite ? activeSprite.frame.length - 1 : 0;
-  rangeBeginInput.max = maxFrame;
-  rangeEndInput.max = maxFrame;
-  rangeBeginInput.value = frameRange.begin;
-  rangeEndInput.value = frameRange.end;
+  rangeBeginInput.max = String(maxFrame);
+  rangeEndInput.max = String(maxFrame);
+  rangeBeginInput.value = String(frameRange.begin);
+  rangeEndInput.value = String(frameRange.end);
   rangeBeginInput.disabled = !activeSprite;
   rangeEndInput.disabled = !activeSprite;
 }
@@ -623,7 +593,7 @@ function updateRangeInputs() {
 rangeBeginInput.addEventListener('change', () => {
   const v = Math.max(0, Math.min(parseInt(rangeBeginInput.value, 10) || 0, frameRange.end));
   frameRange.begin = v;
-  rangeBeginInput.value = v;
+  rangeBeginInput.value = String(v);
   if (currentFrame < v) currentFrame = v;
   updateSliderRange();
   updateFrameDisplay();
@@ -634,7 +604,7 @@ rangeEndInput.addEventListener('change', () => {
   const maxFrame = activeSprite ? activeSprite.frame.length - 1 : 0;
   const v = Math.max(frameRange.begin, Math.min(parseInt(rangeEndInput.value, 10) || 0, maxFrame));
   frameRange.end = v;
-  rangeEndInput.value = v;
+  rangeEndInput.value = String(v);
   if (currentFrame > v) currentFrame = v;
   updateSliderRange();
   updateFrameDisplay();
@@ -657,7 +627,7 @@ frameSlider.addEventListener('pointerup', () => {
 });
 
 // ── Playback controls ──
-function enableControls(enabled) {
+function enableControls(enabled: boolean): void {
   btnPrev.disabled = !enabled;
   btnPlay.disabled = !enabled;
   btnNext.disabled = !enabled;
@@ -692,22 +662,22 @@ btnNext.addEventListener('click', () => {
   drawCurrentFrame();
 });
 
-function play() {
+function play(): void {
   if (!activeSprite) return;
   playing = true;
-  btnPlay.textContent = '⏸';
+  btnPlay.textContent = '\u23F8';
   lastTimestamp = performance.now();
   accumulator = 0;
   tick(lastTimestamp);
 }
 
-function stop() {
+function stop(): void {
   playing = false;
-  btnPlay.textContent = '▶';
+  btnPlay.textContent = '\u25B6';
   if (rafId) { cancelAnimationFrame(rafId); rafId = null; }
 }
 
-function tick(timestamp) {
+function tick(timestamp: number): void {
   if (!playing) return;
   const fps = parseFloat(speedInput.value) || 30;
   const frameDuration = 1000 / fps;
@@ -744,18 +714,18 @@ function tick(timestamp) {
   rafId = requestAnimationFrame(tick);
 }
 
-function updateFrameDisplay() {
+function updateFrameDisplay(): void {
   const total = activeSprite ? activeSprite.frame.length : 0;
   frameDisplay.textContent = `${currentFrame} / ${total - 1}`;
-  frameSlider.value = currentFrame;
+  frameSlider.value = String(currentFrame);
 }
 
 // ── Zoom / Pan ──
-function updateZoomDisplay() {
+function updateZoomDisplay(): void {
   zoomDisplay.textContent = Math.round(zoom * 100) + '%';
 }
 
-function updateSizeDisplay() {
+function updateSizeDisplay(): void {
   if (!animation) {
     animSizeDisplay.textContent = '';
     return;
@@ -763,10 +733,10 @@ function updateSizeDisplay() {
   const scale = parseInt(sizeScaleSelect.value) || 1;
   const w = animation.size[0] * scale;
   const h = animation.size[1] * scale;
-  animSizeDisplay.textContent = `${w}×${h}`;
+  animSizeDisplay.textContent = `${w}\u00d7${h}`;
 }
 
-function updateCoordDisplay(e) {
+function updateCoordDisplay(e: PointerEvent | MouseEvent): void {
   if (!animation) { coordDisplay.textContent = ''; return; }
   const rect = canvas.getBoundingClientRect();
   const dpr = window.devicePixelRatio || 1;
@@ -789,7 +759,6 @@ canvas.addEventListener('wheel', (e) => {
   const factor = e.deltaY > 0 ? 0.9 : 1.1;
   zoom = Math.max(0.05, Math.min(100, zoom * factor));
 
-  // Keep point under cursor fixed
   const dx = mouseX - halfW;
   const dy = mouseY - halfH;
   panX = dx - (dx - panX) * zoom / oldZoom;
@@ -803,30 +772,34 @@ let isPanning = false;
 let panStartX = 0, panStartY = 0, panOriginX = 0, panOriginY = 0;
 
 // ── Boundary drag-resize state ──
-let boundaryDragEdge = null; // null | 'n' | 's' | 'e' | 'w' | 'ne' | 'nw' | 'se' | 'sw'
-let boundaryDragStart = null; // { mx, my, origW, origH }
-const EDGE_HIT = 6; // pixels threshold for edge detection
+type EdgeDir = 'n' | 's' | 'e' | 'w' | 'ne' | 'nw' | 'se' | 'sw';
+let boundaryDragEdge: EdgeDir | null = null;
+let boundaryDragStart: {
+  mx: number; my: number;
+  origW: number; origH: number;
+  origPosX: number; origPosY: number;
+  origPanX: number; origPanY: number;
+} | null = null;
+const EDGE_HIT = 6;
 
-/** Convert client coords to animation-space coords */
-function clientToAnimSpace(clientX, clientY) {
+function clientToAnimSpace(clientX: number, clientY: number): { ax: number; ay: number } {
   const rect = canvas.getBoundingClientRect();
   const dpr = window.devicePixelRatio || 1;
   const cx = canvas.width / 2 + panX * dpr;
   const cy = canvas.height / 2 + panY * dpr;
-  const ox = animation.position[0];
-  const oy = animation.position[1];
+  const ox = animation!.position[0];
+  const oy = animation!.position[1];
   const ax = ((clientX - rect.left) * dpr - cx) / zoom + ox;
   const ay = ((clientY - rect.top) * dpr - cy) / zoom + oy;
   return { ax, ay };
 }
 
-/** Detect which boundary edge/corner is near the pointer (screen-space threshold) */
-function hitTestBoundaryEdge(clientX, clientY) {
+function hitTestBoundaryEdge(clientX: number, clientY: number): EdgeDir | null {
   if (!animation || !boundaryCheck.checked) return null;
   const w = animation.size[0];
   const h = animation.size[1];
   const { ax, ay } = clientToAnimSpace(clientX, clientY);
-  const threshold = EDGE_HIT / zoom; // scale threshold to animation space
+  const threshold = EDGE_HIT / zoom;
 
   const nearLeft   = Math.abs(ax) < threshold;
   const nearRight  = Math.abs(ax - w) < threshold;
@@ -846,28 +819,27 @@ function hitTestBoundaryEdge(clientX, clientY) {
   return null;
 }
 
-const EDGE_CURSORS = {
+const EDGE_CURSORS: Record<EdgeDir, string> = {
   n: 'ns-resize', s: 'ns-resize',
   e: 'ew-resize', w: 'ew-resize',
   ne: 'nesw-resize', sw: 'nesw-resize',
   nw: 'nwse-resize', se: 'nwse-resize',
 };
 
-function syncSizeInputs() {
-  sizeWInput.value = animation.size[0];
-  sizeHInput.value = animation.size[1];
+function syncSizeInputs(): void {
+  sizeWInput.value = String(animation!.size[0]);
+  sizeHInput.value = String(animation!.size[1]);
   updateSizeDisplay();
 }
 
 canvas.addEventListener('pointerdown', (e) => {
-  // Check for boundary edge drag first
   const edge = hitTestBoundaryEdge(e.clientX, e.clientY);
   if (edge && e.button === 0) {
     boundaryDragEdge = edge;
     boundaryDragStart = {
       mx: e.clientX, my: e.clientY,
-      origW: animation.size[0], origH: animation.size[1],
-      origPosX: animation.position[0], origPosY: animation.position[1],
+      origW: animation!.size[0], origH: animation!.size[1],
+      origPosX: animation!.position[0], origPosY: animation!.position[1],
       origPanX: panX, origPanY: panY,
     };
     canvas.setPointerCapture(e.pointerId);
@@ -889,7 +861,6 @@ canvas.addEventListener('pointerdown', (e) => {
 canvas.addEventListener('pointermove', (e) => {
   updateCoordDisplay(e);
 
-  // Boundary drag in progress
   if (boundaryDragEdge && boundaryDragStart) {
     const dpr = window.devicePixelRatio || 1;
     const dx = (e.clientX - boundaryDragStart.mx) * dpr / zoom;
@@ -911,16 +882,15 @@ canvas.addEventListener('pointermove', (e) => {
       newPosY = Math.round(boundaryDragStart.origPosY - dy);
     }
 
-    animation.size[0] = newW;
-    animation.size[1] = newH;
-    animation.position[0] = newPosX;
-    animation.position[1] = newPosY;
+    animation!.size[0] = newW;
+    animation!.size[1] = newH;
+    animation!.position[0] = newPosX;
+    animation!.position[1] = newPosY;
     syncSizeInputs();
     drawCurrentFrame();
     return;
   }
 
-  // Update cursor for boundary edges
   if (!isPanning) {
     const edge = hitTestBoundaryEdge(e.clientX, e.clientY);
     canvas.style.cursor = edge ? EDGE_CURSORS[edge] : '';
@@ -960,10 +930,10 @@ btnZoomReset.addEventListener('click', () => {
 });
 
 // ── Filter panels ──
-function populateImagePanel() {
+function populateImagePanel(): void {
   imageList.innerHTML = '';
   imgRegexInput.value = '';
-  animation.image.forEach((img, i) => {
+  animation!.image.forEach((img, i) => {
     const li = document.createElement('li');
     li.dataset.filterName = parseImageFileName(img.name).toLowerCase();
     const cb = document.createElement('input');
@@ -973,7 +943,6 @@ function populateImagePanel() {
       imageFilter[i] = cb.checked;
       drawCurrentFrame();
     });
-    // Thumbnail
     const tex = textures.get(img.name);
     if (tex) {
       const thumb = document.createElement('img');
@@ -998,25 +967,24 @@ function populateImagePanel() {
   });
 }
 
-/** For a single-frame sprite, find its first image texture (if any). */
-function getSpriteThumbTexture(sp) {
+function getSpriteThumbTexture(sp: Animation['sprite'][0]): HTMLImageElement | null {
   if (sp.frame.length !== 1) return null;
   const frame0 = sp.frame[0];
   for (const a of frame0.append) {
-    if (!a.sprite && a.resource < animation.image.length) {
-      const imgDef = animation.image[a.resource];
+    if (!a.sprite && a.resource < animation!.image.length) {
+      const imgDef = animation!.image[a.resource];
       return textures.get(imgDef.name) || null;
     }
   }
   return null;
 }
 
-function populateSpritePanel() {
+function populateSpritePanel(): void {
   spriteList.innerHTML = '';
   sprRegexInput.value = '';
-  animation.sprite.forEach((sp, i) => {
+  animation!.sprite.forEach((sp, i) => {
     const li = document.createElement('li');
-    li.dataset.spriteIndex = i;
+    li.dataset.spriteIndex = String(i);
     li.dataset.filterName = (sp.name || 'sprite_' + i).toLowerCase();
     const cb = document.createElement('input');
     cb.type = 'checkbox';
@@ -1026,7 +994,6 @@ function populateSpritePanel() {
       syncSpecialLayerUI();
       drawCurrentFrame();
     });
-    // Thumbnail for single-frame sprites
     const thumbTex = getSpriteThumbTexture(sp);
     if (thumbTex) {
       const thumb = document.createElement('img');
@@ -1044,10 +1011,10 @@ function populateSpritePanel() {
     info.textContent = sp.frame.length + 'f';
     const btn = document.createElement('button');
     btn.className = 'btn-activate';
-    btn.textContent = '▶';
+    btn.textContent = '\u25B6';
     btn.title = t('sprite.activate.title');
-    btn.addEventListener('click', (e) => {
-      e.stopPropagation();
+    btn.addEventListener('click', (ev) => {
+      ev.stopPropagation();
       spriteSelect.value = String(i);
       activateSprite(i);
     });
@@ -1056,8 +1023,7 @@ function populateSpritePanel() {
     li.appendChild(btn);
     spriteList.appendChild(li);
   });
-  // Main sprite entry
-  if (animation.mainSprite) {
+  if (animation!.mainSprite) {
     const li = document.createElement('li');
     li.dataset.spriteIndex = 'main';
     li.dataset.filterName = 'mainsprite';
@@ -1069,13 +1035,13 @@ function populateSpritePanel() {
     label.textContent = 'MainSprite';
     const info = document.createElement('span');
     info.className = 'item-size';
-    info.textContent = animation.mainSprite.frame.length + 'f';
+    info.textContent = animation!.mainSprite.frame.length + 'f';
     const btn = document.createElement('button');
     btn.className = 'btn-activate';
-    btn.textContent = '▶';
+    btn.textContent = '\u25B6';
     btn.title = t('sprite.activateMain.title');
-    btn.addEventListener('click', (e) => {
-      e.stopPropagation();
+    btn.addEventListener('click', (ev) => {
+      ev.stopPropagation();
       spriteSelect.value = 'main';
       activateSprite(-1);
     });
@@ -1087,40 +1053,40 @@ function populateSpritePanel() {
   }
 }
 
-function highlightActiveSpriteInPanel() {
+function highlightActiveSpriteInPanel(): void {
   const key = activeSpriteIndex === -1 ? 'main' : String(activeSpriteIndex);
-  for (const li of spriteList.children) {
+  for (const li of Array.from(spriteList.children) as HTMLElement[]) {
     li.classList.toggle('active-sprite', li.dataset.spriteIndex === key);
   }
 }
 
 // Image filter: select all / none
-document.getElementById('btn-img-all').addEventListener('click', () => {
+document.getElementById('btn-img-all')!.addEventListener('click', () => {
   imageFilter.fill(true);
-  for (const li of imageList.children) li.querySelector('input').checked = true;
+  for (const li of Array.from(imageList.children)) li.querySelector('input')!.checked = true;
   drawCurrentFrame();
 });
-document.getElementById('btn-img-none').addEventListener('click', () => {
+document.getElementById('btn-img-none')!.addEventListener('click', () => {
   imageFilter.fill(false);
-  for (const li of imageList.children) li.querySelector('input').checked = false;
+  for (const li of Array.from(imageList.children)) li.querySelector('input')!.checked = false;
   drawCurrentFrame();
 });
 
 // Sprite filter: select all / none
-document.getElementById('btn-spr-all').addEventListener('click', () => {
+document.getElementById('btn-spr-all')!.addEventListener('click', () => {
   spriteFilter.fill(true);
-  for (const li of spriteList.children) {
+  for (const li of Array.from(spriteList.children)) {
     const cb = li.querySelector('input');
-    if (cb) cb.checked = true;
+    if (cb) (cb as HTMLInputElement).checked = true;
   }
   syncSpecialLayerUI();
   drawCurrentFrame();
 });
-document.getElementById('btn-spr-none').addEventListener('click', () => {
+document.getElementById('btn-spr-none')!.addEventListener('click', () => {
   spriteFilter.fill(false);
-  for (const li of spriteList.children) {
+  for (const li of Array.from(spriteList.children)) {
     const cb = li.querySelector('input');
-    if (cb) cb.checked = false;
+    if (cb) (cb as HTMLInputElement).checked = false;
   }
   syncSpecialLayerUI();
   drawCurrentFrame();
@@ -1128,25 +1094,24 @@ document.getElementById('btn-spr-none').addEventListener('click', () => {
 
 // ── Special Layer Detection & Controls ──
 
-function detectSpecialLayers() {
+function detectSpecialLayers(): void {
   plantCustomLayers = [];
   zombieStateLayers = [];
   groundSwatchLayers = [];
 
-  animation.sprite.forEach((sp, i) => {
+  animation!.sprite.forEach((sp, i) => {
     if (!sp.name) return;
     if (sp.name.startsWith('custom_')) plantCustomLayers.push(i);
     if (sp.name === 'ink' || sp.name === 'butter') zombieStateLayers.push(i);
     if (sp.name === 'ground_swatch' || sp.name === 'ground_swatch_plane') groundSwatchLayers.push(i);
   });
 
-  // Plant Custom Layer dropdown
   plantLayerSelect.innerHTML = '';
   if (plantCustomLayers.length > 0) {
     for (const idx of plantCustomLayers) {
       const opt = document.createElement('option');
       opt.value = String(idx);
-      opt.textContent = animation.sprite[idx].name.substring(7); // strip "custom_"
+      opt.textContent = animation!.sprite[idx].name!.substring(7);
       plantLayerSelect.appendChild(opt);
     }
     const noneOpt = document.createElement('option');
@@ -1155,7 +1120,6 @@ function detectSpecialLayers() {
     plantLayerSelect.appendChild(noneOpt);
     plantLayerSelect.value = 'none';
     plantLayerSelect.disabled = false;
-    // Initially hide all custom_ sprites
     for (const idx of plantCustomLayers) {
       spriteFilter[idx] = false;
       syncSpriteCheckbox(idx, false);
@@ -1164,13 +1128,12 @@ function detectSpecialLayers() {
     plantLayerSelect.disabled = true;
   }
 
-  // Zombie State Layer dropdown
   zombieStateSelect.innerHTML = '';
   if (zombieStateLayers.length > 0) {
     for (const idx of zombieStateLayers) {
       const opt = document.createElement('option');
       opt.value = String(idx);
-      opt.textContent = animation.sprite[idx].name;
+      opt.textContent = animation!.sprite[idx].name!;
       zombieStateSelect.appendChild(opt);
     }
     const noneOpt = document.createElement('option');
@@ -1179,7 +1142,6 @@ function detectSpecialLayers() {
     zombieStateSelect.appendChild(noneOpt);
     zombieStateSelect.value = 'none';
     zombieStateSelect.disabled = false;
-    // Initially hide all state sprites
     for (const idx of zombieStateLayers) {
       spriteFilter[idx] = false;
       syncSpriteCheckbox(idx, false);
@@ -1188,7 +1150,6 @@ function detectSpecialLayers() {
     zombieStateSelect.disabled = true;
   }
 
-  // Ground Swatch toggle
   if (groundSwatchLayers.length > 0) {
     groundSwatchCheck.disabled = false;
     const anyVisible = groundSwatchLayers.some(idx => spriteFilter[idx]);
@@ -1199,19 +1160,17 @@ function detectSpecialLayers() {
   }
 }
 
-/** Sync the checkbox in the Sprite panel for a given sprite index */
-function syncSpriteCheckbox(sprIndex, checked) {
-  for (const li of spriteList.children) {
+function syncSpriteCheckbox(sprIndex: number, checked: boolean): void {
+  for (const li of Array.from(spriteList.children) as HTMLElement[]) {
     if (li.dataset.spriteIndex === String(sprIndex)) {
-      const cb = li.querySelector('input[type="checkbox"]');
+      const cb = li.querySelector<HTMLInputElement>('input[type="checkbox"]');
       if (cb) cb.checked = checked;
       break;
     }
   }
 }
 
-/** Apply mutually-exclusive layer selection */
-function applyExclusiveLayer(layerIndices, selectedIdx) {
+function applyExclusiveLayer(layerIndices: number[], selectedIdx: number): void {
   for (const idx of layerIndices) {
     const show = idx === selectedIdx;
     spriteFilter[idx] = show;
@@ -1220,22 +1179,17 @@ function applyExclusiveLayer(layerIndices, selectedIdx) {
   drawCurrentFrame();
 }
 
-/** Sync the special layer dropdowns/checkbox to reflect current spriteFilter state */
-function syncSpecialLayerUI() {
-  // Plant custom layer
+function syncSpecialLayerUI(): void {
   if (plantCustomLayers.length > 0) {
     const visible = plantCustomLayers.filter(i => spriteFilter[i]);
     if (visible.length === 0) plantLayerSelect.value = 'none';
     else if (visible.length === 1) plantLayerSelect.value = String(visible[0]);
-    // else multiple → leave as-is (indeterminate)
   }
-  // Zombie state layer
   if (zombieStateLayers.length > 0) {
     const visible = zombieStateLayers.filter(i => spriteFilter[i]);
     if (visible.length === 0) zombieStateSelect.value = 'none';
     else if (visible.length === 1) zombieStateSelect.value = String(visible[0]);
   }
-  // Ground swatch
   if (groundSwatchLayers.length > 0) {
     groundSwatchCheck.checked = groundSwatchLayers.some(i => spriteFilter[i]);
   }
@@ -1263,17 +1217,17 @@ groundSwatchCheck.addEventListener('change', () => {
 });
 
 // ── Regex filtering ──
-function applyRegexFilter(input, listEl) {
+function applyRegexFilter(input: HTMLInputElement, listEl: HTMLElement): void {
   const pattern = input.value.trim();
   if (!pattern) {
     input.classList.remove('regex-error');
-    for (const li of listEl.children) li.classList.remove('regex-hidden');
+    for (const li of Array.from(listEl.children) as HTMLElement[]) li.classList.remove('regex-hidden');
     return;
   }
   try {
     const re = new RegExp(pattern, 'i');
     input.classList.remove('regex-error');
-    for (const li of listEl.children) {
+    for (const li of Array.from(listEl.children) as HTMLElement[]) {
       const name = li.dataset.filterName || '';
       li.classList.toggle('regex-hidden', !re.test(name));
     }
@@ -1286,36 +1240,35 @@ imgRegexInput.addEventListener('input', () => applyRegexFilter(imgRegexInput, im
 sprRegexInput.addEventListener('input', () => applyRegexFilter(sprRegexInput, spriteList));
 
 // ── Panel resize handles ──
-function initResizeHandle(handle, panel, side) {
-  let startX, startWidth;
-  const onPointerMove = (e) => {
+function initResizeHandle(handle: HTMLElement, panel: HTMLElement, side: 'left' | 'right'): void {
+  let startX: number, startWidth: number;
+  const onPointerMove = (e: PointerEvent) => {
     const delta = side === 'left' ? (e.clientX - startX) : (startX - e.clientX);
     const newWidth = Math.max(120, Math.min(500, startWidth + delta));
     panel.style.width = newWidth + 'px';
     requestAnimationFrame(resizeCanvas);
   };
-  const onPointerUp = (e) => {
+  const onPointerUp = (e: PointerEvent) => {
     handle.classList.remove('dragging');
     handle.releasePointerCapture(e.pointerId);
-    handle.removeEventListener('pointermove', onPointerMove);
-    handle.removeEventListener('pointerup', onPointerUp);
+    handle.removeEventListener('pointermove', onPointerMove as EventListener);
+    handle.removeEventListener('pointerup', onPointerUp as EventListener);
   };
   handle.addEventListener('pointerdown', (e) => {
     e.preventDefault();
-    startX = e.clientX;
+    startX = (e as PointerEvent).clientX;
     startWidth = panel.getBoundingClientRect().width;
     handle.classList.add('dragging');
-    handle.setPointerCapture(e.pointerId);
-    handle.addEventListener('pointermove', onPointerMove);
-    handle.addEventListener('pointerup', onPointerUp);
+    handle.setPointerCapture((e as PointerEvent).pointerId);
+    handle.addEventListener('pointermove', onPointerMove as EventListener);
+    handle.addEventListener('pointerup', onPointerUp as EventListener);
   });
 }
 
 initResizeHandle(resizeHandleLeft, panelImages, 'left');
 initResizeHandle(resizeHandleRight, panelSprites, 'right');
 
-// Panel visibility toggles
-function setPanelVisible(which, visible) {
+function setPanelVisible(which: 'images' | 'sprites', visible: boolean): void {
   const panel = which === 'images' ? panelImages : panelSprites;
   const btn = which === 'images' ? btnToggleImages : btnToggleSprites;
   panel.classList.toggle('hidden', !visible);
@@ -1326,7 +1279,6 @@ btnToggleImages.addEventListener('click', () => {
   const show = panelImages.classList.contains('hidden');
   setPanelVisible('images', show);
   saveSettings();
-  // Resize canvas after panel toggle
   requestAnimationFrame(resizeCanvas);
 });
 
@@ -1338,31 +1290,29 @@ btnToggleSprites.addEventListener('click', () => {
 });
 
 // ── Rendering ──
-function drawCurrentFrame() {
+function drawCurrentFrame(): void {
   if (!animation || !activeSprite) return;
 
   const dpr = window.devicePixelRatio || 1;
   ctx.setTransform(1, 0, 0, 1, 0, 0);
   ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-  // Camera: center + pan + zoom
   const cx = canvas.width / 2 + panX * dpr;
   const cy = canvas.height / 2 + panY * dpr;
   const s = zoom;
   const originX = animation.position[0];
   const originY = animation.position[1];
 
-  const baseMatrix = [s, 0, 0, s, cx, cy];
+  const baseMatrix: [number, number, number, number, number, number] = [s, 0, 0, s, cx, cy];
   const baseColor = { r: 1, g: 1, b: 1, a: 1 };
 
   renderFrame(
-    ctx, animation, textures, spriteTimelines,
+    ctx, animation, textures, spriteTimelines!,
     activeSpriteIndex, currentFrame,
     baseMatrix, baseColor,
     imageFilter, spriteFilter,
   );
 
-  // Boundary box
   if (boundaryCheck.checked) {
     const bw = animation.size[0];
     const bh = animation.size[1];
@@ -1371,11 +1321,10 @@ function drawCurrentFrame() {
     ctx.lineWidth = 1 / s;
     ctx.strokeRect(-originX, -originY, bw, bh);
 
-    // Draw drag handles at corners and edge midpoints
     const handleSize = 5 / s;
     ctx.fillStyle = 'rgba(0, 200, 255, 0.8)';
     const bx = -originX, by = -originY;
-    const handles = [
+    const handles: [number, number][] = [
       [bx, by], [bx + bw / 2, by], [bx + bw, by],
       [bx, by + bh / 2], [bx + bw, by + bh / 2],
       [bx, by + bh], [bx + bw / 2, by + bh], [bx + bw, by + bh],
@@ -1384,7 +1333,6 @@ function drawCurrentFrame() {
       ctx.fillRect(hx - handleSize / 2, hy - handleSize / 2, handleSize, handleSize);
     }
 
-    // Cross-hair at animation origin
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.beginPath();
     ctx.moveTo(cx - 10, cy);
@@ -1403,21 +1351,20 @@ boundaryCheck.addEventListener('change', () => {
   saveSettings();
 });
 
-// Save on setting changes
 loopCheck.addEventListener('change', saveSettings);
 reverseCheck.addEventListener('change', saveSettings);
 autoplayCheck.addEventListener('change', saveSettings);
 keepSpeedCheck.addEventListener('change', saveSettings);
 
 // ── Size controls ──
-let sizeAspectLocked = true;
+const sizeAspectLocked = true;
 
 sizeWInput.addEventListener('input', () => {
   if (!animation) return;
   const w = parseInt(sizeWInput.value) || 1;
   if (sizeAspectLocked && animation.size[0] > 0) {
     const ratio = animation.size[1] / animation.size[0];
-    sizeHInput.value = Math.round(w * ratio);
+    sizeHInput.value = String(Math.round(w * ratio));
   }
   animation.size[0] = parseInt(sizeWInput.value) || 1;
   animation.size[1] = parseInt(sizeHInput.value) || 1;
@@ -1430,7 +1377,7 @@ sizeHInput.addEventListener('input', () => {
   const h = parseInt(sizeHInput.value) || 1;
   if (sizeAspectLocked && animation.size[1] > 0) {
     const ratio = animation.size[0] / animation.size[1];
-    sizeWInput.value = Math.round(h * ratio);
+    sizeWInput.value = String(Math.round(h * ratio));
   }
   animation.size[0] = parseInt(sizeWInput.value) || 1;
   animation.size[1] = parseInt(sizeHInput.value) || 1;
@@ -1442,24 +1389,24 @@ sizeScaleSelect.addEventListener('change', updateSizeDisplay);
 
 // ── Speed preset menu ──
 const SPEED_PRESETS = [
-  { label: '0.25×', factor: 0.25 },
-  { label: '0.5×',  factor: 0.5 },
-  { label: '1×',    factor: 1 },
-  { label: '1.5×',  factor: 1.5 },
-  { label: '2×',    factor: 2 },
-  { label: '3×',    factor: 3 },
+  { label: '0.25\u00d7', factor: 0.25 },
+  { label: '0.5\u00d7',  factor: 0.5 },
+  { label: '1\u00d7',    factor: 1 },
+  { label: '1.5\u00d7',  factor: 1.5 },
+  { label: '2\u00d7',    factor: 2 },
+  { label: '3\u00d7',    factor: 3 },
 ];
 
-function buildSpeedPresetMenu() {
+function buildSpeedPresetMenu(): void {
   speedPresetMenu.innerHTML = '';
-  const baseRate = activeSprite?.frameRate ?? animation?.frameRate ?? 30;
+  const baseRate = (activeSprite as any)?.frameRate ?? animation?.frameRate ?? 30;
   for (const p of SPEED_PRESETS) {
     const btn = document.createElement('button');
     const fps = Math.round(baseRate * p.factor);
     btn.textContent = `${p.label}  (${fps} FPS)`;
     if (parseInt(speedInput.value) === fps) btn.classList.add('active');
     btn.addEventListener('click', () => {
-      speedInput.value = fps;
+      speedInput.value = String(fps);
       speedInput.dispatchEvent(new Event('input', { bubbles: true }));
       speedPresetMenu.classList.add('hidden');
     });
@@ -1475,7 +1422,7 @@ speedPresetBtn.addEventListener('click', (e) => {
 });
 
 document.addEventListener('click', (e) => {
-  if (!speedPresetMenu.contains(e.target) && e.target !== speedPresetBtn) {
+  if (!speedPresetMenu.contains(e.target as Node) && e.target !== speedPresetBtn) {
     speedPresetMenu.classList.add('hidden');
   }
 });
@@ -1483,21 +1430,20 @@ document.addEventListener('click', (e) => {
 // ── Export helpers ──
 let exportCancelled = false;
 
-/** Render a single frame to an offscreen canvas, applying export scale. */
-function renderFrameToCanvas(frameIdx, w, h) {
+function renderFrameToCanvas(frameIdx: number, w: number, h: number): HTMLCanvasElement {
   const offCanvas = document.createElement('canvas');
   offCanvas.width = w;
   offCanvas.height = h;
-  const offCtx = offCanvas.getContext('2d');
+  const offCtx = offCanvas.getContext('2d')!;
 
   const scale = parseInt(sizeScaleSelect.value) || 1;
-  const ox = animation.position[0] * scale;
-  const oy = animation.position[1] * scale;
-  const baseMatrix = [scale, 0, 0, scale, ox, oy];
+  const ox = animation!.position[0] * scale;
+  const oy = animation!.position[1] * scale;
+  const baseMatrix: [number, number, number, number, number, number] = [scale, 0, 0, scale, ox, oy];
   const baseColor = { r: 1, g: 1, b: 1, a: 1 };
 
   renderFrame(
-    offCtx, animation, textures, spriteTimelines,
+    offCtx, animation!, textures, spriteTimelines!,
     activeSpriteIndex, frameIdx,
     baseMatrix, baseColor,
     imageFilter, spriteFilter,
@@ -1505,14 +1451,14 @@ function renderFrameToCanvas(frameIdx, w, h) {
   return offCanvas;
 }
 
-function getExportSize() {
+function getExportSize(): { w: number; h: number } {
   const scale = parseInt(sizeScaleSelect.value) || 1;
-  const w = animation.size[0] * scale;
-  const h = animation.size[1] * scale;
+  const w = animation!.size[0] * scale;
+  const h = animation!.size[1] * scale;
   return { w: Math.max(w, 1), h: Math.max(h, 1) };
 }
 
-function downloadBlob(blob, filename) {
+function downloadBlob(blob: Blob, filename: string): void {
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
@@ -1523,15 +1469,15 @@ function downloadBlob(blob, filename) {
   setTimeout(() => URL.revokeObjectURL(url), 5000);
 }
 
-function showExportOverlay(title) {
+function showExportOverlay(title: string): void {
   exportCancelled = false;
-  exportOverlay.querySelector('.export-title').textContent = title;
+  exportOverlay.querySelector('.export-title')!.textContent = title;
   exportProgress.value = 0;
   exportStatus.textContent = t('export.preparing');
   exportOverlay.classList.remove('hidden');
 }
 
-function hideExportOverlay() {
+function hideExportOverlay(): void {
   exportOverlay.classList.add('hidden');
 }
 
@@ -1539,8 +1485,8 @@ exportCancelBtn.addEventListener('click', () => {
   exportCancelled = true;
 });
 
-function getExportName(ext) {
-  const base = animName.textContent
+function getExportName(ext: string): string {
+  const base = animName.textContent!
     .replace(/\.pam\.json$/i, '')
     .replace(/\.pam\.ya?ml$/i, '')
     .replace(/\.pam\.toml$/i, '')
@@ -1549,7 +1495,7 @@ function getExportName(ext) {
     .replace(/\.toml$/i, '')
     .replace(/\.pam$/i, '')
     .replace(/\.fla$/i, '');
-  const sprName = activeSpriteIndex === -1 ? 'main' : (animation.sprite[activeSpriteIndex].name || 'sprite_' + activeSpriteIndex);
+  const sprName = activeSpriteIndex === -1 ? 'main' : (animation!.sprite[activeSpriteIndex].name || 'sprite_' + activeSpriteIndex);
   return base + '_' + sprName + '.' + ext;
 }
 
@@ -1563,7 +1509,7 @@ btnExportPng.addEventListener('click', () => {
   }, 'image/png');
 });
 
-// ── Detect WebP encoding support & hide button on Safari ──
+// ── Detect WebP support ──
 {
   const tc = document.createElement('canvas');
   tc.width = 1; tc.height = 1;
@@ -1574,13 +1520,12 @@ btnExportPng.addEventListener('click', () => {
 }
 
 // ── Animated WebP encoder ──
-
-async function extractWebpPayload(blob) {
+async function extractWebpPayload(blob: Blob): Promise<Uint8Array> {
   const buf = await blob.arrayBuffer();
   const bytes = new Uint8Array(buf);
   const view = new DataView(buf);
   let pos = 12;
-  const parts = [];
+  const parts: Uint8Array[] = [];
   while (pos + 8 <= bytes.length) {
     const fourCC = String.fromCharCode(bytes[pos], bytes[pos+1], bytes[pos+2], bytes[pos+3]);
     const chunkSize = view.getUint32(pos + 4, true);
@@ -1597,31 +1542,31 @@ async function extractWebpPayload(blob) {
   return result;
 }
 
-function writeU32LE(arr, off, val) {
+function writeU32LE(arr: Uint8Array, off: number, val: number): void {
   arr[off] = val & 0xff;
   arr[off+1] = (val >> 8) & 0xff;
   arr[off+2] = (val >> 16) & 0xff;
   arr[off+3] = (val >> 24) & 0xff;
 }
-function writeU24LE(arr, off, val) {
+function writeU24LE(arr: Uint8Array, off: number, val: number): void {
   arr[off] = val & 0xff;
   arr[off+1] = (val >> 8) & 0xff;
   arr[off+2] = (val >> 16) & 0xff;
 }
-function writeU16LE(arr, off, val) {
+function writeU16LE(arr: Uint8Array, off: number, val: number): void {
   arr[off] = val & 0xff;
   arr[off+1] = (val >> 8) & 0xff;
 }
 
-async function encodeAnimatedWebp(canvasFrames, w, h, fps) {
+async function encodeAnimatedWebp(canvasFrames: HTMLCanvasElement[], w: number, h: number, fps: number): Promise<Uint8Array> {
   const durationMs = Math.round(1000 / fps);
-  const framePayloads = [];
+  const framePayloads: Uint8Array[] = [];
   for (const cvs of canvasFrames) {
-    const blob = await new Promise(r => cvs.toBlob(r, 'image/webp', 0.9));
+    const blob = await new Promise<Blob>(r => cvs.toBlob(r as any, 'image/webp', 0.9));
     framePayloads.push(await extractWebpPayload(blob));
   }
 
-  const anmfChunks = [];
+  const anmfChunks: Uint8Array[] = [];
   for (let i = 0; i < framePayloads.length; i++) {
     const payload = framePayloads[i];
     const anmfData = new Uint8Array(16 + payload.length);
@@ -1667,12 +1612,11 @@ async function encodeAnimatedWebp(canvasFrames, w, h, fps) {
   return result;
 }
 
-// ── APNG encoder (fallback for Safari) ──
-
-async function extractPngIdat(blob) {
+// ── APNG encoder ──
+async function extractPngIdat(blob: Blob): Promise<Uint8Array> {
   const buf = await blob.arrayBuffer();
   const view = new DataView(buf);
-  const chunks = [];
+  const chunks: Uint8Array[] = [];
   let pos = 8;
   while (pos < buf.byteLength) {
     const len = view.getUint32(pos);
@@ -1689,22 +1633,23 @@ async function extractPngIdat(blob) {
   return result;
 }
 
-function apngCrc32(data, start, length) {
-  const table = apngCrc32.table || (apngCrc32.table = (() => {
-    const t = new Uint32Array(256);
-    for (let i = 0; i < 256; i++) {
-      let c = i;
-      for (let j = 0; j < 8; j++) c = (c & 1) ? (0xEDB88320 ^ (c >>> 1)) : (c >>> 1);
-      t[i] = c;
-    }
-    return t;
-  })());
+const apngCrc32Table: Uint32Array = (() => {
+  const t = new Uint32Array(256);
+  for (let i = 0; i < 256; i++) {
+    let c = i;
+    for (let j = 0; j < 8; j++) c = (c & 1) ? (0xEDB88320 ^ (c >>> 1)) : (c >>> 1);
+    t[i] = c;
+  }
+  return t;
+})();
+
+function apngCrc32(data: Uint8Array, start: number, length: number): number {
   let crc = 0xFFFFFFFF;
-  for (let i = start; i < start + length; i++) crc = table[(crc ^ data[i]) & 0xFF] ^ (crc >>> 8);
+  for (let i = start; i < start + length; i++) crc = apngCrc32Table[(crc ^ data[i]) & 0xFF] ^ (crc >>> 8);
   return (crc ^ 0xFFFFFFFF) >>> 0;
 }
 
-function makeApngChunk(type, data) {
+function makeApngChunk(type: string, data: Uint8Array): Uint8Array {
   const len = data.length;
   const chunk = new Uint8Array(12 + len);
   const view = new DataView(chunk.buffer);
@@ -1716,23 +1661,23 @@ function makeApngChunk(type, data) {
   return chunk;
 }
 
-async function encodeApng(canvasFrames, w, h, fps) {
+async function encodeApng(canvasFrames: HTMLCanvasElement[], w: number, h: number, fps: number): Promise<Uint8Array> {
   const numFrames = canvasFrames.length;
   const delayNum = 1, delayDen = fps;
 
-  const framePngDatas = [];
+  const framePngDatas: Uint8Array[] = [];
   for (const cvs of canvasFrames) {
-    const blob = await new Promise(r => cvs.toBlob(r, 'image/png'));
+    const blob = await new Promise<Blob>(r => cvs.toBlob(r as any, 'image/png'));
     framePngDatas.push(await extractPngIdat(blob));
   }
 
-  const firstBlob = await new Promise(r => canvasFrames[0].toBlob(r, 'image/png'));
+  const firstBlob = await new Promise<Blob>(r => canvasFrames[0].toBlob(r as any, 'image/png'));
   const firstBuf = await firstBlob.arrayBuffer();
   const firstView = new DataView(firstBuf);
   const ihdrLen = firstView.getUint32(8);
   const ihdrChunk = new Uint8Array(firstBuf, 8, 12 + ihdrLen);
 
-  const parts = [];
+  const parts: Uint8Array[] = [];
   parts.push(new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10]));
   parts.push(new Uint8Array(ihdrChunk));
 
@@ -1770,8 +1715,12 @@ async function encodeApng(canvasFrames, w, h, fps) {
 }
 
 // ── Export animation helper ──
-
-async function exportAnimCommon(formatLabel, encodeFn, mime, ext) {
+async function exportAnimCommon(
+  formatLabel: string,
+  encodeFn: (frames: HTMLCanvasElement[], w: number, h: number, fps: number) => Promise<Uint8Array>,
+  mime: string,
+  ext: string,
+): Promise<void> {
   if (!animation || !activeSprite) return;
   showExportOverlay(t('export.exporting', { format: formatLabel }));
 
@@ -1782,13 +1731,13 @@ async function exportAnimCommon(formatLabel, encodeFn, mime, ext) {
     const totalFrames = end - begin + 1;
     const fps = parseInt(speedInput.value, 10) || 30;
 
-    const canvasFrames = [];
+    const canvasFrames: HTMLCanvasElement[] = [];
     for (let i = 0; i < totalFrames; i++) {
       if (exportCancelled) { hideExportOverlay(); return; }
       const fi = begin + i;
       canvasFrames.push(renderFrameToCanvas(fi, w, h));
       exportProgress.value = ((i + 1) / totalFrames) * 50;
-      exportStatus.textContent = t('export.rendering', { current: i + 1, total: totalFrames });
+      exportStatus.textContent = t('export.rendering', { current: String(i + 1), total: String(totalFrames) });
       if (i % 5 === 4) await new Promise(r => setTimeout(r, 0));
     }
 
@@ -1801,10 +1750,10 @@ async function exportAnimCommon(formatLabel, encodeFn, mime, ext) {
     exportProgress.value = 100;
 
     if (!exportCancelled) {
-      const blob = new Blob([bytes], { type: mime });
+      const blob = new Blob([bytes as BlobPart], { type: mime });
       downloadBlob(blob, getExportName(ext));
     }
-  } catch (e) {
+  } catch (e: any) {
     alert(e.message || t('export.failed'));
   }
   hideExportOverlay();
@@ -1819,7 +1768,7 @@ btnExportWebp.addEventListener('click', () =>
 // ── Export FLA ──
 btnExportFla.addEventListener('click', async () => {
   if (!animation) return;
-  const baseName = animName.textContent.replace(/\.pam\.json$/i, '').replace(/\.json$/i, '').replace(/\.pam$/i, '');
+  const baseName = animName.textContent!.replace(/\.pam\.json$/i, '').replace(/\.json$/i, '').replace(/\.pam$/i, '');
   btnExportFla.disabled = true;
   try {
     const blob = await exportFLA(animation, textures);
@@ -1830,8 +1779,8 @@ btnExportFla.addEventListener('click', async () => {
 });
 
 // ── Format conversion exports ──
-function getConvertName(ext) {
-  return animName.textContent
+function getConvertName(ext: string): string {
+  return animName.textContent!
     .replace(/\.pam\.json$/i, '')
     .replace(/\.pam\.ya?ml$/i, '')
     .replace(/\.pam\.toml$/i, '')
@@ -1850,20 +1799,18 @@ btnConvertJson.addEventListener('click', () => {
   downloadBlob(blob, getConvertName('json'));
 });
 
-btnConvertYaml.addEventListener('click', async () => {
+btnConvertYaml.addEventListener('click', () => {
   if (!animation) return;
-  const yaml = await loadYaml();
   const raw = toRawJson(animation);
-  const text = yaml.dump(raw, { lineWidth: -1, noRefs: true });
+  const text = jsYamlMod.dump(raw, { lineWidth: -1, noRefs: true });
   const blob = new Blob([text], { type: 'text/yaml' });
   downloadBlob(blob, getConvertName('yaml'));
 });
 
-btnConvertToml.addEventListener('click', async () => {
+btnConvertToml.addEventListener('click', () => {
   if (!animation) return;
-  const toml = await loadToml();
   const raw = toRawJson(animation);
-  const text = toml.stringify(raw);
+  const text = smolTomlMod.stringify(raw as any);
   const blob = new Blob([text], { type: 'application/toml' });
   downloadBlob(blob, getConvertName('toml'));
 });
@@ -1873,7 +1820,7 @@ btnConvertPam.addEventListener('click', () => {
   const raw = toRawJson(animation);
   const buf = encodePAM(raw);
   const blob = new Blob([buf], { type: 'application/octet-stream' });
-  const name = animName.textContent
+  const name = animName.textContent!
     .replace(/\.pam\.json$/i, '')
     .replace(/\.pam\.ya?ml$/i, '')
     .replace(/\.pam\.toml$/i, '')
@@ -1885,10 +1832,9 @@ btnConvertPam.addEventListener('click', () => {
   downloadBlob(blob, name);
 });
 
-
 // ── Keyboard shortcuts ──
 document.addEventListener('keydown', (e) => {
-  if (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT') return;
+  if ((e.target as HTMLElement).tagName === 'INPUT' || (e.target as HTMLElement).tagName === 'SELECT') return;
   switch (e.key) {
     case ' ':
       e.preventDefault();

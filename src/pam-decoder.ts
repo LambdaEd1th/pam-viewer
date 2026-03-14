@@ -1,19 +1,22 @@
-// PAM binary decoder — decodes .pam files into the same JSON structure as .pam.json
-// Ported from pvz2-toolkit (Rust), Twinning (C++), and Sen (Dart/C#)
+import type { RawPamJson } from './types';
 
 const PAM_MAGIC = 0xBAF01954;
 
 class BinaryReader {
-  constructor(buffer) {
+  private view: DataView;
+  private offset: number;
+
+  constructor(buffer: ArrayBuffer) {
     this.view = new DataView(buffer);
     this.offset = 0;
   }
-  readU8() { const v = this.view.getUint8(this.offset); this.offset += 1; return v; }
-  readI16() { const v = this.view.getInt16(this.offset, true); this.offset += 2; return v; }
-  readU16() { const v = this.view.getUint16(this.offset, true); this.offset += 2; return v; }
-  readI32() { const v = this.view.getInt32(this.offset, true); this.offset += 4; return v; }
-  readU32() { const v = this.view.getUint32(this.offset, true); this.offset += 4; return v; }
-  readString() {
+
+  readU8(): number { const v = this.view.getUint8(this.offset); this.offset += 1; return v; }
+  readI16(): number { const v = this.view.getInt16(this.offset, true); this.offset += 2; return v; }
+  readU16(): number { const v = this.view.getUint16(this.offset, true); this.offset += 2; return v; }
+  readI32(): number { const v = this.view.getInt32(this.offset, true); this.offset += 4; return v; }
+  readU32(): number { const v = this.view.getUint32(this.offset, true); this.offset += 4; return v; }
+  readString(): string {
     const len = this.readU16();
     const bytes = new Uint8Array(this.view.buffer, this.offset, len);
     this.offset += len;
@@ -21,26 +24,32 @@ class BinaryReader {
   }
 }
 
-function readCount(r) {
+function readCount(r: BinaryReader): number {
   const n = r.readU8();
   return n === 0xFF ? r.readU16() : n;
 }
 
-function readImage(r, version) {
+interface RawDecodedImage {
+  name: string;
+  size: [number, number] | null;
+  transform: number[];
+}
+
+function readImage(r: BinaryReader, version: number): RawDecodedImage {
   const name = r.readString();
-  let size = null;
+  let size: [number, number] | null = null;
   if (version >= 4) {
     const w = r.readI16();
     const h = r.readI16();
     size = [w, h];
   }
 
-  let transform;
+  let transform: number[];
   if (version === 1) {
     const angle = r.readU16() / 1000.0;
     const x = r.readI16() / 20.0;
     const y = r.readI16() / 20.0;
-    transform = [angle, x, y]; // rotate_translate
+    transform = [angle, x, y];
   } else {
     const a = r.readI32() / 1310720.0;
     const c = r.readI32() / 1310720.0;
@@ -48,13 +57,22 @@ function readImage(r, version) {
     const d = r.readI32() / 1310720.0;
     const x = r.readI16() / 20.0;
     const y = r.readI16() / 20.0;
-    transform = [a, b, c, d, x, y]; // matrix_translate
+    transform = [a, b, c, d, x, y];
   }
 
   return { name, size, transform };
 }
 
-function readFrame(r, version) {
+interface RawDecodedFrame {
+  label?: string;
+  stop?: boolean;
+  command?: [string, string][];
+  remove?: { index: number }[];
+  append?: Record<string, unknown>[];
+  change?: Record<string, unknown>[];
+}
+
+function readFrame(r: BinaryReader, version: number): RawDecodedFrame {
   const flags = r.readU8();
   const hasRemoves  = (flags & 0x01) !== 0;
   const hasAppends  = (flags & 0x02) !== 0;
@@ -63,8 +81,7 @@ function readFrame(r, version) {
   const isStop      = (flags & 0x10) !== 0;
   const hasCommands = (flags & 0x20) !== 0;
 
-  // Removes
-  const remove = [];
+  const remove: { index: number }[] = [];
   if (hasRemoves) {
     const count = readCount(r);
     for (let i = 0; i < count; i++) {
@@ -75,8 +92,7 @@ function readFrame(r, version) {
     }
   }
 
-  // Appends
-  const append = [];
+  const append: Record<string, unknown>[] = [];
   if (hasAppends) {
     const count = readCount(r);
     for (let i = 0; i < count; i++) {
@@ -89,7 +105,7 @@ function readFrame(r, version) {
       const additive        = (raw & 0x4000) !== 0;
       const sprite          = (raw & 0x8000) !== 0;
 
-      let resource;
+      let resource: number;
       if (version >= 6) {
         resource = r.readU8();
         if (resource === 0xFF) resource = r.readU16();
@@ -101,7 +117,7 @@ function readFrame(r, version) {
       const name = hasName ? r.readString() : undefined;
       const time_scale = hasTimeScale ? r.readI32() / 65536.0 : 1.0;
 
-      const entry = { index, resource, sprite };
+      const entry: Record<string, unknown> = { index, resource, sprite };
       if (additive) entry.additive = true;
       if (preload_frame !== 0) entry.preload_frame = preload_frame;
       if (name !== undefined) entry.name = name;
@@ -110,8 +126,7 @@ function readFrame(r, version) {
     }
   }
 
-  // Changes
-  const change = [];
+  const change: Record<string, unknown>[] = [];
   if (hasChanges) {
     const count = readCount(r);
     for (let i = 0; i < count; i++) {
@@ -125,61 +140,46 @@ function readFrame(r, version) {
       const hasRotate       = (raw & 0x4000) !== 0;
       const hasSrcRect      = (raw & 0x8000) !== 0;
 
-      // Transform
-      let transform;
+      let transform: number[];
       if (hasMatrix) {
         const a = r.readI32() / 65536.0;
         const c = r.readI32() / 65536.0;
         const b = r.readI32() / 65536.0;
         const d = r.readI32() / 65536.0;
         if (longCoords) {
-          const x = r.readI32() / 20.0;
-          const y = r.readI32() / 20.0;
-          transform = [a, b, c, d, x, y];
+          transform = [a, b, c, d, r.readI32() / 20.0, r.readI32() / 20.0];
         } else {
-          const x = r.readI16() / 20.0;
-          const y = r.readI16() / 20.0;
-          transform = [a, b, c, d, x, y];
+          transform = [a, b, c, d, r.readI16() / 20.0, r.readI16() / 20.0];
         }
       } else if (hasRotate) {
         const angle = r.readI16() / 1000.0;
         if (longCoords) {
-          const x = r.readI32() / 20.0;
-          const y = r.readI32() / 20.0;
-          transform = [angle, x, y];
+          transform = [angle, r.readI32() / 20.0, r.readI32() / 20.0];
         } else {
-          const x = r.readI16() / 20.0;
-          const y = r.readI16() / 20.0;
-          transform = [angle, x, y];
+          transform = [angle, r.readI16() / 20.0, r.readI16() / 20.0];
         }
       } else {
         if (longCoords) {
-          const x = r.readI32() / 20.0;
-          const y = r.readI32() / 20.0;
-          transform = [x, y];
+          transform = [r.readI32() / 20.0, r.readI32() / 20.0];
         } else {
-          const x = r.readI16() / 20.0;
-          const y = r.readI16() / 20.0;
-          transform = [x, y];
+          transform = [r.readI16() / 20.0, r.readI16() / 20.0];
         }
       }
 
-      const entry = { index, transform };
+      const entry: Record<string, unknown> = { index, transform };
 
       if (hasSrcRect) {
-        const sx = r.readI16() / 20;
-        const sy = r.readI16() / 20;
-        const sw = r.readI16() / 20;
-        const sh = r.readI16() / 20;
-        entry.source_rectangle = [sx, sy, sw, sh];
+        entry.source_rectangle = [
+          r.readI16() / 20, r.readI16() / 20,
+          r.readI16() / 20, r.readI16() / 20,
+        ];
       }
 
       if (hasColor) {
-        const cr = r.readU8() / 255.0;
-        const cg = r.readU8() / 255.0;
-        const cb = r.readU8() / 255.0;
-        const ca = r.readU8() / 255.0;
-        entry.color = [cr, cg, cb, ca];
+        entry.color = [
+          r.readU8() / 255.0, r.readU8() / 255.0,
+          r.readU8() / 255.0, r.readU8() / 255.0,
+        ];
       }
 
       if (hasAnimFrameNum) {
@@ -190,7 +190,7 @@ function readFrame(r, version) {
     }
   }
 
-  const frame = {};
+  const frame: RawDecodedFrame = {};
   if (hasLabel) frame.label = r.readString();
   if (isStop) frame.stop = true;
 
@@ -211,8 +211,15 @@ function readFrame(r, version) {
   return frame;
 }
 
-function readSprite(r, version, globalFrameRate) {
-  const sprite = {};
+interface RawDecodedSprite {
+  name?: string;
+  frame_rate?: number;
+  work_area?: [number, number];
+  frame: RawDecodedFrame[];
+}
+
+function readSprite(r: BinaryReader, version: number): RawDecodedSprite {
+  const sprite: RawDecodedSprite = { frame: [] };
 
   if (version >= 4) {
     const name = r.readString();
@@ -233,7 +240,6 @@ function readSprite(r, version, globalFrameRate) {
     sprite.work_area = [start, duration];
   }
 
-  sprite.frame = [];
   for (let i = 0; i < frameCount; i++) {
     sprite.frame.push(readFrame(r, version));
   }
@@ -241,12 +247,7 @@ function readSprite(r, version, globalFrameRate) {
   return sprite;
 }
 
-/**
- * Decode a .pam binary buffer into the same JSON structure as .pam.json.
- * @param {ArrayBuffer} buffer
- * @returns {object} — same shape as a parsed .pam.json file
- */
-export function decodePAM(buffer) {
+export function decodePAM(buffer: ArrayBuffer): RawPamJson {
   const r = new BinaryReader(buffer);
 
   const magic = r.readU32();
@@ -260,30 +261,38 @@ export function decodePAM(buffer) {
   }
 
   const frame_rate = r.readU8();
-  const position = [r.readI16() / 20.0, r.readI16() / 20.0];
-  const size = [r.readU16() / 20.0, r.readU16() / 20.0];
+  const position: [number, number] = [r.readI16() / 20.0, r.readI16() / 20.0];
+  const size: [number, number] = [r.readU16() / 20.0, r.readU16() / 20.0];
 
   const imageCount = r.readU16();
-  const image = [];
+  const image: RawDecodedImage[] = [];
   for (let i = 0; i < imageCount; i++) {
     image.push(readImage(r, version));
   }
 
   const spriteCount = r.readU16();
-  const sprite = [];
+  const sprite: RawDecodedSprite[] = [];
   for (let i = 0; i < spriteCount; i++) {
-    sprite.push(readSprite(r, version, frame_rate));
+    sprite.push(readSprite(r, version));
   }
 
-  let main_sprite = null;
+  let main_sprite: RawDecodedSprite | null = null;
   if (version <= 3) {
-    main_sprite = readSprite(r, version, frame_rate);
+    main_sprite = readSprite(r, version);
   } else {
-    const hasMain = r.readU8() !== 0;
+    const hasMain = r.readU8();
     if (hasMain) {
-      main_sprite = readSprite(r, version, frame_rate);
+      main_sprite = readSprite(r, version);
     }
   }
 
-  return { version, frame_rate, position, size, image, sprite, main_sprite };
+  return {
+    version,
+    frame_rate,
+    position,
+    size,
+    image,
+    sprite,
+    main_sprite,
+  } as unknown as RawPamJson;
 }

@@ -1,72 +1,9 @@
-// XFL/FLA importer — parses Adobe Flash XFL format back into PAM animation JSON
-// Ported from pvz2-toolkit Rust decoder (core/pam/src/xfl/decoder.rs)
+import type { RawPamJson } from './types';
 
-/**
- * Read a ZIP file and return a Map of filename -> Uint8Array
- * Handles Store (method 0) and Deflate (method 8) entries.
- * @param {ArrayBuffer} buf
- * @returns {Map<string, Uint8Array>}
- */
-function readZip(buf) {
+async function readZipAsync(buf: ArrayBuffer): Promise<Map<string, Uint8Array>> {
   const view = new DataView(buf);
   const bytes = new Uint8Array(buf);
-  const files = new Map();
-  let pos = 0;
-
-  while (pos + 4 <= bytes.length) {
-    const sig = view.getUint32(pos, true);
-    if (sig !== 0x04034b50) break; // not a local file header
-
-    const method = view.getUint16(pos + 8, true);
-    const compressedSize = view.getUint32(pos + 18, true);
-    const uncompressedSize = view.getUint32(pos + 22, true);
-    const nameLen = view.getUint16(pos + 26, true);
-    const extraLen = view.getUint16(pos + 28, true);
-    const nameBytes = bytes.subarray(pos + 30, pos + 30 + nameLen);
-    const name = new TextDecoder().decode(nameBytes);
-    const dataStart = pos + 30 + nameLen + extraLen;
-    const compressedData = bytes.subarray(dataStart, dataStart + compressedSize);
-
-    if (!name.endsWith('/')) {
-      if (method === 0) {
-        // Store
-        files.set(name, compressedData.slice());
-      } else if (method === 8) {
-        // Deflate — use DecompressionStream
-        const decompressed = inflateRaw(compressedData, uncompressedSize);
-        files.set(name, decompressed);
-      }
-    }
-
-    pos = dataStart + compressedSize;
-  }
-
-  return files;
-}
-
-/**
- * Inflate raw deflate data synchronously using a manual inflate implementation.
- * Falls back to simple store if decompression fails.
- * @param {Uint8Array} data
- * @param {number} expectedSize
- * @returns {Uint8Array}
- */
-function inflateRaw(data, expectedSize) {
-  // Use DecompressionStream if available (async path handled externally)
-  // For sync, implement a minimal inflate.
-  // Actually, we'll handle this via async readZipAsync below.
-  throw new Error('Deflate not supported in sync mode');
-}
-
-/**
- * Read a ZIP file asynchronously (supports Deflate via DecompressionStream).
- * @param {ArrayBuffer} buf
- * @returns {Promise<Map<string, Uint8Array>>}
- */
-async function readZipAsync(buf) {
-  const view = new DataView(buf);
-  const bytes = new Uint8Array(buf);
-  const files = new Map();
+  const files = new Map<string, Uint8Array>();
   let pos = 0;
 
   while (pos + 4 <= bytes.length) {
@@ -86,14 +23,13 @@ async function readZipAsync(buf) {
       if (method === 0) {
         files.set(name, compressedData.slice());
       } else if (method === 8) {
-        // Deflate via DecompressionStream
         const ds = new DecompressionStream('deflate-raw');
         const writer = ds.writable.getWriter();
         writer.write(compressedData);
         writer.close();
         const reader = ds.readable.getReader();
-        const chunks = [];
-        while (true) {
+        const chunks: Uint8Array[] = [];
+        for (;;) {
           const { done, value } = await reader.read();
           if (done) break;
           chunks.push(value);
@@ -113,26 +49,27 @@ async function readZipAsync(buf) {
 }
 
 // ── XML helpers ──
-function parseXml(text) {
+function parseXml(text: string): Document {
   return new DOMParser().parseFromString(text, 'text/xml');
 }
 
-function getAttr(el, name, def) {
-  return el.hasAttribute(name) ? el.getAttribute(name) : def;
-}
-
-function getAttrF(el, name, def = 0) {
+function getAttrF(el: Element, name: string, def = 0): number {
   const v = el.getAttribute(name);
   return v != null ? parseFloat(v) : def;
 }
 
-function getAttrI(el, name, def = 0) {
+function getAttrI(el: Element, name: string, def = 0): number {
   const v = el.getAttribute(name);
   return v != null ? parseInt(v, 10) : def;
 }
 
-// ── Parse DOMDocument.xml — extract metadata + flow/command layers ──
-function parseDOMDocument(xmlText) {
+interface MainFrameInfo {
+  label: string | null;
+  stop: boolean;
+  command: [string, string][];
+}
+
+function parseDOMDocument(xmlText: string): { width: number; height: number; frameRate: number; frames: MainFrameInfo[] } {
   const doc = parseXml(xmlText);
   const root = doc.documentElement;
 
@@ -140,10 +77,9 @@ function parseDOMDocument(xmlText) {
   const height = getAttrF(root, 'height', 0);
   const frameRate = getAttrI(root, 'frameRate', 30);
 
-  // Find the "animation" DOMTimeline
-  const frames = []; // sparse: index -> { label, stop, command }
+  const frames: MainFrameInfo[] = [];
 
-  const ensureFrame = (idx) => {
+  const ensureFrame = (idx: number) => {
     while (frames.length <= idx) {
       frames.push({ label: null, stop: false, command: [] });
     }
@@ -166,10 +102,9 @@ function parseDOMDocument(xmlText) {
           const label = df.getAttribute('name');
           if (label) frames[idx].label = label;
 
-          // Check for stop() in Actionscript
           const scripts = df.querySelectorAll('Actionscript script');
           for (const s of scripts) {
-            if (s.textContent.includes('stop()')) {
+            if (s.textContent?.includes('stop()')) {
               frames[idx].stop = true;
             }
           }
@@ -178,7 +113,7 @@ function parseDOMDocument(xmlText) {
         if (layerName === 'command') {
           const scripts = df.querySelectorAll('Actionscript script');
           for (const s of scripts) {
-            const text = s.textContent;
+            const text = s.textContent || '';
             const fsRe = /fscommand\("([^"]+)"(?:,\s*"([^"]*)")?\)/g;
             let m;
             while ((m = fsRe.exec(text)) !== null) {
@@ -193,8 +128,7 @@ function parseDOMDocument(xmlText) {
   return { width, height, frameRate, frames };
 }
 
-// ── Parse source_N.xml — extract image name and size ──
-function parseSource(xmlText) {
+function parseSource(xmlText: string): { name: string; size: [number, number] } | null {
   const doc = parseXml(xmlText);
   const bmpInst = doc.querySelector('DOMBitmapInstance');
   if (!bmpInst) return null;
@@ -204,13 +138,12 @@ function parseSource(xmlText) {
 
   const dimRe = /_(\d+)x(\d+)(?:_\d+)?$/;
   const dimMatch = name.match(dimRe);
-  const size = dimMatch ? [parseInt(dimMatch[1]), parseInt(dimMatch[2])] : [0, 0];
+  const size: [number, number] = dimMatch ? [parseInt(dimMatch[1]), parseInt(dimMatch[2])] : [0, 0];
 
   return { name, size };
 }
 
-// ── Parse image_N.xml — extract transform matrix ──
-function parseImage(xmlText) {
+function parseImage(xmlText: string): number[] {
   const doc = parseXml(xmlText);
   const transform = [1, 0, 0, 1, 0, 0];
 
@@ -227,14 +160,27 @@ function parseImage(xmlText) {
   return transform;
 }
 
-// ── Parse sprite/main XML — convert XFL timeline to PAM sparse frames ──
-function parseSpriteDocument(xmlText) {
+interface SpriteState {
+  resource: number;
+  transform: number[];
+  color: number[];
+  firstFrame: number | null;
+}
+
+interface SparseFrame {
+  label?: string | null;
+  stop?: boolean;
+  command?: [string, string][];
+  remove: { index: number }[];
+  append: { index: number; resource: number; sprite: boolean }[];
+  change: { index: number; transform: number[]; color?: number[]; sprite_frame_number?: number }[];
+}
+
+function parseSpriteDocument(xmlText: string): { frames: SparseFrame[]; totalFrames: number } {
   const doc = parseXml(xmlText);
 
   let totalFrames = 0;
-
-  // Phase 1: Build state map — stateMap[zIndex][frameIndex] = ElementState | null
-  const stateMap = new Map(); // zIndex -> Array<ElementState | null>
+  const stateMap = new Map<number, (SpriteState | null)[]>();
 
   const domLayers = doc.querySelectorAll('DOMLayer');
   for (const layer of domLayers) {
@@ -249,8 +195,7 @@ function parseSpriteDocument(xmlText) {
       const endIdx = startIdx + duration;
       if (endIdx > totalFrames) totalFrames = endIdx;
 
-      // Parse DOMSymbolInstance (if any)
-      let state = null;
+      let state: SpriteState | null = null;
       const symInst = df.querySelector(':scope > elements > DOMSymbolInstance');
       if (symInst) {
         const libItem = symInst.getAttribute('libraryItemName') || '';
@@ -263,7 +208,7 @@ function parseSpriteDocument(xmlText) {
           resourceId = parseInt(spriteMatch[1]) - 1 + 10000;
         }
 
-        let firstFrame = null;
+        let firstFrame: number | null = null;
         const ff = symInst.getAttribute('firstFrame');
         if (ff != null) firstFrame = parseInt(ff);
 
@@ -292,21 +237,18 @@ function parseSpriteDocument(xmlText) {
         }
       }
 
-      // Spread state across all frames in this keyframe range
       if (!stateMap.has(zIndex)) stateMap.set(zIndex, []);
-      const tl = stateMap.get(zIndex);
+      const tl = stateMap.get(zIndex)!;
       while (tl.length < endIdx) tl.push(null);
       if (state) {
         for (let i = startIdx; i < endIdx; i++) {
           tl[i] = { ...state, transform: [...state.transform], color: [...state.color] };
         }
       }
-      // null keyframes (no DOMSymbolInstance) leave those frames as null — means removal
     }
   }
 
-  // Phase 2: Convert state map to sparse frames
-  const frames = [];
+  const frames: SparseFrame[] = [];
   for (let i = 0; i < totalFrames; i++) {
     frames.push({ remove: [], append: [], change: [] });
   }
@@ -314,20 +256,17 @@ function parseSpriteDocument(xmlText) {
   const zKeys = [...stateMap.keys()].sort((a, b) => a - b);
 
   for (const z of zKeys) {
-    const tl = stateMap.get(z);
-    let prevState = null;
-    let virtualPrev = null;
+    const tl = stateMap.get(z)!;
+    let prevState: SpriteState | null = null;
+    let virtualPrev: SpriteState | null = null;
 
     for (let t = 0; t < totalFrames; t++) {
       const curr = t < tl.length ? tl[t] : null;
 
-      // Detect remove/append transitions
       if (prevState !== null && curr === null) {
-        // Element removed
         frames[t].remove.push({ index: z });
         virtualPrev = null;
       } else if (prevState === null && curr !== null) {
-        // Element appeared
         frames[t].append.push({
           index: z,
           resource: curr.resource % 10000,
@@ -340,7 +279,6 @@ function parseSpriteDocument(xmlText) {
           firstFrame: null,
         };
       } else if (prevState !== null && curr !== null && prevState.resource !== curr.resource) {
-        // Resource changed — remove + append
         frames[t].remove.push({ index: z });
         frames[t].append.push({
           index: z,
@@ -355,19 +293,17 @@ function parseSpriteDocument(xmlText) {
         };
       }
 
-      // Emit change if different from virtualPrev
       if (curr !== null && virtualPrev !== null) {
         const transformChange = !arrEq(virtualPrev.transform, curr.transform);
         const colorChange = !arrEq(virtualPrev.color, curr.color);
         const frameChange = virtualPrev.firstFrame !== curr.firstFrame;
 
         if (transformChange || colorChange || frameChange) {
-          const change = {
+          const change: SparseFrame['change'][0] = {
             index: z,
             transform: [...curr.transform],
           };
 
-          // Only emit color if non-identity
           if (!arrEq(curr.color, [1, 1, 1, 1])) {
             change.color = [...curr.color];
           }
@@ -394,7 +330,7 @@ function parseSpriteDocument(xmlText) {
   return { frames, totalFrames };
 }
 
-function arrEq(a, b) {
+function arrEq(a: number[], b: number[]): boolean {
   if (a.length !== b.length) return false;
   for (let i = 0; i < a.length; i++) {
     if (Math.abs(a[i] - b[i]) > 1e-9) return false;
@@ -402,29 +338,21 @@ function arrEq(a, b) {
   return true;
 }
 
-/**
- * Import a FLA file (ZIP) and convert to PAM raw JSON.
- * @param {ArrayBuffer} buf - FLA file contents
- * @returns {Promise<object>} - raw PAM JSON (same format as .pam.json)
- */
-export async function importFLA(buf) {
+export interface ImportResult {
+  json: RawPamJson;
+  mediaPngs: Map<string, Uint8Array>;
+}
+
+export async function importFLA(buf: ArrayBuffer): Promise<ImportResult> {
   const zipFiles = await readZipAsync(buf);
   return importXFLFromFiles(zipFiles);
 }
 
-/**
- * Import XFL from a Map of file paths to content (from drag-drop folder or ZIP).
- * @param {Map<string, Uint8Array>} files - Map of relative paths to file data
- * @returns {object} - raw PAM JSON
- */
-export function importXFLFromFiles(files) {
+export function importXFLFromFiles(files: Map<string, Uint8Array>): ImportResult {
   const decoder = new TextDecoder();
 
-  // Helper to find a file by normalized path
-  const getText = (path) => {
-    // Try exact match first
-    if (files.has(path)) return decoder.decode(files.get(path));
-    // Try without leading separators
+  const getText = (path: string): string | null => {
+    if (files.has(path)) return decoder.decode(files.get(path)!);
     for (const [k, v] of files) {
       const normalized = k.replace(/\\/g, '/').replace(/^\//, '');
       if (normalized === path || normalized.endsWith('/' + path)) {
@@ -434,25 +362,12 @@ export function importXFLFromFiles(files) {
     return null;
   };
 
-  const getBytes = (path) => {
-    if (files.has(path)) return files.get(path);
-    for (const [k, v] of files) {
-      const normalized = k.replace(/\\/g, '/').replace(/^\//, '');
-      if (normalized === path || normalized.endsWith('/' + path)) {
-        return v;
-      }
-    }
-    return null;
-  };
-
-  // Parse DOMDocument.xml
   const docXml = getText('DOMDocument.xml');
   if (!docXml) throw new Error('DOMDocument.xml not found in FLA/XFL');
   const { width, height, frameRate, frames: mainFrames } = parseDOMDocument(docXml);
 
-  // Parse source files → image name + size mapping
-  const idToName = new Map();
-  const idToSize = new Map();
+  const idToName = new Map<number, string>();
+  const idToSize = new Map<number, [number, number]>();
   for (const [path] of files) {
     const norm = path.replace(/\\/g, '/');
     const m = norm.match(/(?:LIBRARY\/)?source\/source_(\d+)\.xml$/i);
@@ -467,21 +382,19 @@ export function importXFLFromFiles(files) {
     }
   }
 
-  // Parse image files → transforms
   const imageKeys = [...idToName.keys()].sort((a, b) => a - b);
-  const images = [];
+  const images: { name: string; size: [number, number]; transform: number[] }[] = [];
   for (const idx of imageKeys) {
     const xml = getText(`LIBRARY/image/image_${idx}.xml`);
     const transform = xml ? parseImage(xml) : [1, 0, 0, 1, 0, 0];
     images.push({
-      name: idToName.get(idx),
-      size: idToSize.get(idx),
+      name: idToName.get(idx)!,
+      size: idToSize.get(idx)!,
       transform,
     });
   }
 
-  // Parse sprite files
-  const spriteEntries = [];
+  const spriteEntries: { idx: number; path: string }[] = [];
   for (const [path] of files) {
     const norm = path.replace(/\\/g, '/');
     const m = norm.match(/(?:LIBRARY\/)?sprite\/sprite_(\d+)\.xml$/i);
@@ -490,7 +403,7 @@ export function importXFLFromFiles(files) {
   }
   spriteEntries.sort((a, b) => a.idx - b.idx);
 
-  const sprites = [];
+  const sprites: { frame: Record<string, unknown>[] }[] = [];
   for (const entry of spriteEntries) {
     const xml = getText(entry.path);
     if (!xml) continue;
@@ -500,16 +413,15 @@ export function importXFLFromFiles(files) {
     });
   }
 
-  // Parse main.xml
   const mainXml = getText('LIBRARY/main.xml');
-  let mainSprite = null;
+  let mainSprite: { frame: Record<string, unknown>[] } | null = null;
   if (mainXml) {
     const mainSp = parseSpriteDocument(mainXml);
     const maxLen = Math.max(mainFrames.length, mainSp.frames.length);
 
-    const mergedFrames = [];
+    const mergedFrames: SparseFrame[] = [];
     for (let i = 0; i < maxLen; i++) {
-      const flowFrame = i < mainFrames.length ? mainFrames[i] : { label: null, stop: false, command: [] };
+      const flowFrame = i < mainFrames.length ? mainFrames[i] : { label: null, stop: false, command: [] as [string, string][] };
       const animFrame = i < mainSp.frames.length ? mainSp.frames[i] : { remove: [], append: [], change: [] };
       mergedFrames.push({
         ...animFrame,
@@ -524,8 +436,7 @@ export function importXFLFromFiles(files) {
     };
   }
 
-  // Collect media PNG files
-  const mediaPngs = new Map();
+  const mediaPngs = new Map<string, Uint8Array>();
   for (const [path, data] of files) {
     const norm = path.replace(/\\/g, '/');
     const m = norm.match(/(?:LIBRARY\/)?media\/(.+\.png)$/i);
@@ -534,27 +445,21 @@ export function importXFLFromFiles(files) {
     }
   }
 
-  // Build raw JSON
-  const result = {
+  const result: RawPamJson = {
     version: 6,
     frame_rate: frameRate,
     position: [0, 0],
     size: [width, height],
     image: images,
     sprite: sprites,
-  };
-  if (mainSprite) {
-    result.main_sprite = mainSprite;
-  }
+    main_sprite: mainSprite,
+  } as unknown as RawPamJson;
 
   return { json: result, mediaPngs };
 }
 
-/**
- * Convert internal frame format to raw JSON frame format.
- */
-function buildRawFrame(f) {
-  const raw = {};
+function buildRawFrame(f: SparseFrame): Record<string, unknown> {
+  const raw: Record<string, unknown> = {};
 
   if (f.label) raw.label = f.label;
   if (f.stop) raw.stop = true;
@@ -574,7 +479,7 @@ function buildRawFrame(f) {
 
   if (f.change && f.change.length > 0) {
     raw.change = f.change.map(c => {
-      const out = { index: c.index, transform: c.transform };
+      const out: Record<string, unknown> = { index: c.index, transform: c.transform };
       if (c.color) out.color = c.color;
       if (c.sprite_frame_number != null) out.sprite_frame_number = c.sprite_frame_number;
       return out;
