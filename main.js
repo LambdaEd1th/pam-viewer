@@ -5,8 +5,21 @@
 import { parseAnimation, parseImageFileName, parseSpriteFrameLabels } from './model.js';
 import { buildAllTimelines, renderFrame } from './renderer.js';
 import { decodePAM } from './pam-decoder.js';
+import { encodePAM } from './pam-encoder.js';
+import { toRawJson } from './pam-serializer.js';
 import { exportFLA } from './xfl-exporter.js';
 import { t, getLang, setLang, onLangChange, getAvailableLangs, getLangLabel } from './i18n.js';
+
+let jsYaml = null;
+let smolToml = null;
+async function loadYaml() {
+  if (!jsYaml) jsYaml = await import('https://cdn.jsdelivr.net/npm/js-yaml@4/+esm');
+  return jsYaml;
+}
+async function loadToml() {
+  if (!smolToml) smolToml = await import('https://cdn.jsdelivr.net/npm/smol-toml@1/+esm');
+  return smolToml;
+}
 
 // ── Settings persistence ──
 const SETTINGS_KEY = 'pam-viewer-settings';
@@ -82,6 +95,10 @@ const btnExportPng = document.getElementById('btn-export-png');
 const btnExportApng = document.getElementById('btn-export-apng');
 const btnExportWebp = document.getElementById('btn-export-webp');
 const btnExportFla = document.getElementById('btn-export-fla');
+const btnConvertJson = document.getElementById('btn-convert-json');
+const btnConvertYaml = document.getElementById('btn-convert-yaml');
+const btnConvertToml = document.getElementById('btn-convert-toml');
+const btnConvertPam = document.getElementById('btn-convert-pam');
 const sizeWInput = document.getElementById('size-w');
 const sizeHInput = document.getElementById('size-h');
 const sizeScaleSelect = document.getElementById('size-scale');
@@ -299,14 +316,26 @@ async function loadFromFiles(files) {
 
   let pamJsonFile = files.find(f => /\.pam\.json$/i.test(f.name));
   if (!pamJsonFile) pamJsonFile = files.find(f => /\.json$/i.test(f.name));
-  let pamBinFile = files.find(f => /\.pam$/i.test(f.name) && !/\.json$/i.test(f.name));
+  let pamYamlFile = files.find(f => /\.pam\.ya?ml$/i.test(f.name));
+  if (!pamYamlFile) pamYamlFile = files.find(f => /\.ya?ml$/i.test(f.name));
+  let pamTomlFile = files.find(f => /\.pam\.toml$/i.test(f.name));
+  if (!pamTomlFile) pamTomlFile = files.find(f => /\.toml$/i.test(f.name));
+  let pamBinFile = files.find(f => /\.pam$/i.test(f.name) && !/\.json$/i.test(f.name) && !/\.ya?ml$/i.test(f.name) && !/\.toml$/i.test(f.name));
 
-  if (!pamJsonFile && !pamBinFile) { statusText.textContent = t('status.noPam'); return; }
+  const sourceFile = pamJsonFile || pamYamlFile || pamTomlFile || pamBinFile;
+  if (!sourceFile) { statusText.textContent = t('status.noPam'); return; }
 
-  const sourceFile = pamJsonFile || pamBinFile;
   if (pamJsonFile) {
     const text = await pamJsonFile.text();
     animation = parseAnimation(JSON.parse(text));
+  } else if (pamYamlFile) {
+    const yaml = await loadYaml();
+    const text = await pamYamlFile.text();
+    animation = parseAnimation(yaml.load(text));
+  } else if (pamTomlFile) {
+    const toml = await loadToml();
+    const text = await pamTomlFile.text();
+    animation = parseAnimation(toml.parse(text));
   } else {
     const buf = await pamBinFile.arrayBuffer();
     animation = parseAnimation(decodePAM(buf));
@@ -585,6 +614,10 @@ function enableControls(enabled) {
   btnExportApng.disabled = !enabled;
   btnExportWebp.disabled = !enabled;
   btnExportFla.disabled = !enabled;
+  btnConvertJson.disabled = !enabled;
+  btnConvertYaml.disabled = !enabled;
+  btnConvertToml.disabled = !enabled;
+  btnConvertPam.disabled = !enabled;
   sizeWInput.disabled = !enabled;
   sizeHInput.disabled = !enabled;
   sizeScaleSelect.disabled = !enabled;
@@ -1456,7 +1489,14 @@ exportCancelBtn.addEventListener('click', () => {
 });
 
 function getExportName(ext) {
-  const base = animName.textContent.replace(/\.pam\.json$/i, '').replace(/\.json$/i, '').replace(/\.pam$/i, '');
+  const base = animName.textContent
+    .replace(/\.pam\.json$/i, '')
+    .replace(/\.pam\.ya?ml$/i, '')
+    .replace(/\.pam\.toml$/i, '')
+    .replace(/\.json$/i, '')
+    .replace(/\.ya?ml$/i, '')
+    .replace(/\.toml$/i, '')
+    .replace(/\.pam$/i, '');
   const sprName = activeSpriteIndex === -1 ? 'main' : (animation.sprite[activeSpriteIndex].name || 'sprite_' + activeSpriteIndex);
   return base + '_' + sprName + '.' + ext;
 }
@@ -1737,6 +1777,59 @@ btnExportFla.addEventListener('click', async () => {
   }
 });
 
+// ── Format conversion exports ──
+function getConvertName(ext) {
+  return animName.textContent
+    .replace(/\.pam\.json$/i, '')
+    .replace(/\.pam\.ya?ml$/i, '')
+    .replace(/\.pam\.toml$/i, '')
+    .replace(/\.json$/i, '')
+    .replace(/\.ya?ml$/i, '')
+    .replace(/\.toml$/i, '')
+    .replace(/\.pam$/i, '') + '.pam.' + ext;
+}
+
+btnConvertJson.addEventListener('click', () => {
+  if (!animation) return;
+  const raw = toRawJson(animation);
+  const text = JSON.stringify(raw, null, 2);
+  const blob = new Blob([text], { type: 'application/json' });
+  downloadBlob(blob, getConvertName('json'));
+});
+
+btnConvertYaml.addEventListener('click', async () => {
+  if (!animation) return;
+  const yaml = await loadYaml();
+  const raw = toRawJson(animation);
+  const text = yaml.dump(raw, { lineWidth: -1, noRefs: true });
+  const blob = new Blob([text], { type: 'text/yaml' });
+  downloadBlob(blob, getConvertName('yaml'));
+});
+
+btnConvertToml.addEventListener('click', async () => {
+  if (!animation) return;
+  const toml = await loadToml();
+  const raw = toRawJson(animation);
+  const text = toml.stringify(raw);
+  const blob = new Blob([text], { type: 'application/toml' });
+  downloadBlob(blob, getConvertName('toml'));
+});
+
+btnConvertPam.addEventListener('click', () => {
+  if (!animation) return;
+  const raw = toRawJson(animation);
+  const buf = encodePAM(raw);
+  const blob = new Blob([buf], { type: 'application/octet-stream' });
+  const name = animName.textContent
+    .replace(/\.pam\.json$/i, '')
+    .replace(/\.pam\.ya?ml$/i, '')
+    .replace(/\.pam\.toml$/i, '')
+    .replace(/\.json$/i, '')
+    .replace(/\.ya?ml$/i, '')
+    .replace(/\.toml$/i, '')
+    .replace(/\.pam$/i, '') + '.pam';
+  downloadBlob(blob, name);
+});
 
 
 // ── Keyboard shortcuts ──

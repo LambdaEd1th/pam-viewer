@@ -51,6 +51,12 @@ const messages = {
     'btn.exportWebp.title': '导出动画为 WebP',
     'btn.exportFla.title': '导出为 FLA (Adobe Animate)',
 
+    // Convert buttons
+    'btn.convertJson.title': '转换为 JSON',
+    'btn.convertYaml.title': '转换为 YAML',
+    'btn.convertToml.title': '转换为 TOML',
+    'btn.convertPam.title': '转换为 PAM 二进制',
+
     // Export overlay
     'export.title': '导出中…',
     'export.preparing': '准备中…',
@@ -78,7 +84,7 @@ const messages = {
     'status.hint': '拖放包含 .pam.json 和 PNG 的文件夹到画布区域，或点击 📂 加载',
     'status.noFiles': '未检测到文件',
     'status.loading': '加载中…',
-    'status.noPam': '未找到 .pam 或 .pam.json 文件',
+    'status.noPam': '未找到 .pam / .pam.json / .yaml / .toml 文件',
     'status.loaded': '已加载: {name} ({images} 图像, {loaded} 已加载, {sprites} sprite)',
     'status.error': '错误: {message}',
 
@@ -145,6 +151,12 @@ const messages = {
     'btn.exportWebp.title': 'Export animation as WebP',
     'btn.exportFla.title': 'Export as FLA (Adobe Animate)',
 
+    // Convert buttons
+    'btn.convertJson.title': 'Convert to JSON',
+    'btn.convertYaml.title': 'Convert to YAML',
+    'btn.convertToml.title': 'Convert to TOML',
+    'btn.convertPam.title': 'Convert to PAM binary',
+
     // Export overlay
     'export.title': 'Exporting…',
     'export.preparing': 'Preparing…',
@@ -172,7 +184,7 @@ const messages = {
     'status.hint': 'Drop a folder with .pam.json and PNGs onto the canvas, or click 📂 Load',
     'status.noFiles': 'No files detected',
     'status.loading': 'Loading…',
-    'status.noPam': 'No .pam or .pam.json file found',
+    'status.noPam': 'No .pam / .pam.json / .yaml / .toml file found',
     'status.loaded': 'Loaded: {name} ({images} images, {loaded} loaded, {sprites} sprites)',
     'status.error': 'Error: {message}',
 
