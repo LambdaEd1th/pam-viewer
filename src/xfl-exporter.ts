@@ -285,6 +285,9 @@ function genDOMDocument(anim: Animation): string {
     creatorInfo: 'Adobe Animate CC', platform: 'Windows',
     versionInfo: 'Saved by Animate Windows 19.0 build 326',
     objectsSnapTo: 'false',
+    pamVersion: String(anim.version),
+    pamPositionX: String(anim.position[0]),
+    pamPositionY: String(anim.position[1]),
   });
 
   x.open('folders');

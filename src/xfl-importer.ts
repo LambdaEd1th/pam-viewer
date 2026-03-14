@@ -69,13 +69,16 @@ interface MainFrameInfo {
   command: [string, string][];
 }
 
-function parseDOMDocument(xmlText: string): { width: number; height: number; frameRate: number; frames: MainFrameInfo[] } {
+function parseDOMDocument(xmlText: string): { width: number; height: number; frameRate: number; pamVersion: number; pamPositionX: number; pamPositionY: number; frames: MainFrameInfo[] } {
   const doc = parseXml(xmlText);
   const root = doc.documentElement;
 
   const width = getAttrF(root, 'width', 0);
   const height = getAttrF(root, 'height', 0);
   const frameRate = getAttrI(root, 'frameRate', 30);
+  const pamVersion = getAttrI(root, 'pamVersion', 6);
+  const pamPositionX = getAttrF(root, 'pamPositionX', 0);
+  const pamPositionY = getAttrF(root, 'pamPositionY', 0);
 
   const frames: MainFrameInfo[] = [];
 
@@ -125,7 +128,7 @@ function parseDOMDocument(xmlText: string): { width: number; height: number; fra
     }
   }
 
-  return { width, height, frameRate, frames };
+  return { width, height, frameRate, pamVersion, pamPositionX, pamPositionY, frames };
 }
 
 function parseSource(xmlText: string): { name: string; size: [number, number] } | null {
@@ -365,7 +368,7 @@ export function importXFLFromFiles(files: Map<string, Uint8Array>): ImportResult
 
   const docXml = getText('DOMDocument.xml');
   if (!docXml) throw new Error('DOMDocument.xml not found in FLA/XFL');
-  const { width, height, frameRate, frames: mainFrames } = parseDOMDocument(docXml);
+  const { width, height, frameRate, pamVersion, pamPositionX, pamPositionY, frames: mainFrames } = parseDOMDocument(docXml);
 
   const idToName = new Map<number, string>();
   const idToSize = new Map<number, [number, number]>();
@@ -447,9 +450,9 @@ export function importXFLFromFiles(files: Map<string, Uint8Array>): ImportResult
   }
 
   const result: RawPamJson = {
-    version: 6,
+    version: pamVersion,
     frame_rate: frameRate,
-    position: [0, 0],
+    position: [pamPositionX, pamPositionY],
     size: [width, height],
     image: images,
     sprite: sprites,
