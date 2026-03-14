@@ -163,7 +163,9 @@ function genSource(index: number, image: Animation['image'][0], resolution: numb
   x.open('frames');
   x.open('DOMFrame', { index: '0', keyMode: '9728' });
   x.open('elements');
-  x.open('DOMBitmapInstance', { libraryItemName: mediaName });
+  const bmpAttrs: Record<string, string> = { libraryItemName: mediaName };
+  if (image.name.includes('|')) bmpAttrs.pamName = image.name;
+  x.open('DOMBitmapInstance', bmpAttrs);
   x.open('matrix');
   x.selfClose('Matrix', { a: scale, d: scale });
   x.close('matrix');

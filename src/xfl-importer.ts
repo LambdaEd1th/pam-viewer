@@ -133,8 +133,9 @@ function parseSource(xmlText: string): { name: string; size: [number, number] } 
   const bmpInst = doc.querySelector('DOMBitmapInstance');
   if (!bmpInst) return null;
 
+  const pamName = bmpInst.getAttribute('pamName');
   const libItem = bmpInst.getAttribute('libraryItemName') || '';
-  const name = libItem.replace(/^media\//, '');
+  const name = pamName || libItem.replace(/^media\//, '');
 
   const dimRe = /_(\d+)x(\d+)(?:_\d+)?$/;
   const dimMatch = name.match(dimRe);
