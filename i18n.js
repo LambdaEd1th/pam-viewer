@@ -84,7 +84,7 @@ const messages = {
     'status.hint': '拖放包含 .pam.json 和 PNG 的文件夹到画布区域，或点击 📂 加载',
     'status.noFiles': '未检测到文件',
     'status.loading': '加载中…',
-    'status.noPam': '未找到 .pam / .pam.json / .yaml / .toml 文件',
+    'status.noPam': '未找到 .pam / .pam.json / .yaml / .toml / .fla 文件',
     'status.loaded': '已加载: {name} ({images} 图像, {loaded} 已加载, {sprites} sprite)',
     'status.error': '错误: {message}',
 
@@ -96,7 +96,7 @@ const messages = {
 
     // Drop hint
     'drop.hint': '拖放文件夹到此处加载动画',
-    'drop.hintSub': '支持 .pam / .pam.json + PNG',
+    'drop.hintSub': '支持 .pam / .pam.json / .fla + PNG',
   },
 
   'en': {
@@ -184,7 +184,7 @@ const messages = {
     'status.hint': 'Drop a folder with .pam.json and PNGs onto the canvas, or click 📂 Load',
     'status.noFiles': 'No files detected',
     'status.loading': 'Loading…',
-    'status.noPam': 'No .pam / .pam.json / .yaml / .toml file found',
+    'status.noPam': 'No .pam / .pam.json / .yaml / .toml / .fla file found',
     'status.loaded': 'Loaded: {name} ({images} images, {loaded} loaded, {sprites} sprites)',
     'status.error': 'Error: {message}',
 
@@ -196,7 +196,7 @@ const messages = {
 
     // Drop hint
     'drop.hint': 'Drop a folder here to load animation',
-    'drop.hintSub': 'Supports .pam / .pam.json + PNG',
+    'drop.hintSub': 'Supports .pam / .pam.json / .fla + PNG',
   },
 };
 

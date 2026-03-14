@@ -8,6 +8,7 @@ import { decodePAM } from './pam-decoder.js';
 import { encodePAM } from './pam-encoder.js';
 import { toRawJson } from './pam-serializer.js';
 import { exportFLA } from './xfl-exporter.js';
+import { importFLA, importXFLFromFiles } from './xfl-importer.js';
 import { t, getLang, setLang, onLangChange, getAvailableLangs, getLangLabel } from './i18n.js';
 
 let jsYaml = null;
@@ -314,34 +315,66 @@ async function loadFromFiles(files) {
   statusText.textContent = t('status.loading');
   stop();
 
-  let pamJsonFile = files.find(f => /\.pam\.json$/i.test(f.name));
-  if (!pamJsonFile) pamJsonFile = files.find(f => /\.json$/i.test(f.name));
-  let pamYamlFile = files.find(f => /\.pam\.ya?ml$/i.test(f.name));
-  if (!pamYamlFile) pamYamlFile = files.find(f => /\.ya?ml$/i.test(f.name));
-  let pamTomlFile = files.find(f => /\.pam\.toml$/i.test(f.name));
-  if (!pamTomlFile) pamTomlFile = files.find(f => /\.toml$/i.test(f.name));
-  let pamBinFile = files.find(f => /\.pam$/i.test(f.name) && !/\.json$/i.test(f.name) && !/\.ya?ml$/i.test(f.name) && !/\.toml$/i.test(f.name));
+  // Detect FLA file (ZIP)
+  const flaFile = files.find(f => /\.fla$/i.test(f.name));
+  // Detect XFL folder structure (DOMDocument.xml present among files)
+  const hasXfl = !flaFile && files.some(f => /(?:^|[\/])DOMDocument\.xml$/i.test(f.name));
 
-  const sourceFile = pamJsonFile || pamYamlFile || pamTomlFile || pamBinFile;
-  if (!sourceFile) { statusText.textContent = t('status.noPam'); return; }
+  let flaMediaPngs = null; // Map<string, Uint8Array> from FLA/XFL import
+  let displayName = '';
 
-  if (pamJsonFile) {
-    const text = await pamJsonFile.text();
-    animation = parseAnimation(JSON.parse(text));
-  } else if (pamYamlFile) {
-    const yaml = await loadYaml();
-    const text = await pamYamlFile.text();
-    animation = parseAnimation(yaml.load(text));
-  } else if (pamTomlFile) {
-    const toml = await loadToml();
-    const text = await pamTomlFile.text();
-    animation = parseAnimation(toml.parse(text));
+  if (flaFile || hasXfl) {
+    // --- FLA/XFL import path ---
+    if (flaFile) {
+      const buf = await flaFile.arrayBuffer();
+      const result = await importFLA(buf);
+      animation = parseAnimation(result.json);
+      flaMediaPngs = result.mediaPngs;
+      displayName = flaFile.name;
+    } else {
+      // XFL folder: build file map from File objects
+      const fileMap = new Map();
+      for (const f of files) {
+        const buf = await f.arrayBuffer();
+        fileMap.set(f.name, new Uint8Array(buf));
+      }
+      const result = importXFLFromFiles(fileMap);
+      animation = parseAnimation(result.json);
+      flaMediaPngs = result.mediaPngs;
+      displayName = files[0]?.name?.split('/')[0] || 'XFL';
+    }
   } else {
-    const buf = await pamBinFile.arrayBuffer();
-    animation = parseAnimation(decodePAM(buf));
+    // --- PAM/JSON/YAML/TOML import path ---
+    let pamJsonFile = files.find(f => /\.pam\.json$/i.test(f.name));
+    if (!pamJsonFile) pamJsonFile = files.find(f => /\.json$/i.test(f.name));
+    let pamYamlFile = files.find(f => /\.pam\.ya?ml$/i.test(f.name));
+    if (!pamYamlFile) pamYamlFile = files.find(f => /\.ya?ml$/i.test(f.name));
+    let pamTomlFile = files.find(f => /\.pam\.toml$/i.test(f.name));
+    if (!pamTomlFile) pamTomlFile = files.find(f => /\.toml$/i.test(f.name));
+    let pamBinFile = files.find(f => /\.pam$/i.test(f.name) && !/\.json$/i.test(f.name) && !/\.ya?ml$/i.test(f.name) && !/\.toml$/i.test(f.name));
+
+    const sourceFile = pamJsonFile || pamYamlFile || pamTomlFile || pamBinFile;
+    if (!sourceFile) { statusText.textContent = t('status.noPam'); return; }
+    displayName = sourceFile.name;
+
+    if (pamJsonFile) {
+      const text = await pamJsonFile.text();
+      animation = parseAnimation(JSON.parse(text));
+    } else if (pamYamlFile) {
+      const yaml = await loadYaml();
+      const text = await pamYamlFile.text();
+      animation = parseAnimation(yaml.load(text));
+    } else if (pamTomlFile) {
+      const toml = await loadToml();
+      const text = await pamTomlFile.text();
+      animation = parseAnimation(toml.parse(text));
+    } else {
+      const buf = await pamBinFile.arrayBuffer();
+      animation = parseAnimation(decodePAM(buf));
+    }
   }
 
-  // Build PNG name map
+  // Build PNG name map from file list
   const pngMap = new Map();
   for (const f of files) {
     if (/\.png$/i.test(f.name)) pngMap.set(f.name.toUpperCase(), f);
@@ -354,6 +387,24 @@ async function loadFromFiles(files) {
     const baseName = parseImageFileName(img.name);
     const pipeIdx = img.name.indexOf('|');
     const altName = pipeIdx !== -1 ? img.name.substring(pipeIdx + 1) : null;
+
+    // Try from FLA/XFL embedded media PNGs first
+    if (flaMediaPngs) {
+      for (const name of [baseName, altName].filter(Boolean)) {
+        const pngData = flaMediaPngs.get(name);
+        if (pngData) {
+          try {
+            const blob = new Blob([pngData], { type: 'image/png' });
+            textures.set(img.name, await blobToImage(blob));
+            loaded++;
+          } catch { /* skip */ }
+          break;
+        }
+      }
+      if (textures.has(img.name)) continue;
+    }
+
+    // Fall back to file list PNGs
     for (const name of [baseName, altName].filter(Boolean)) {
       const pngFile = pngMap.get((name + '.png').toUpperCase());
       if (pngFile) {
@@ -378,7 +429,7 @@ async function loadFromFiles(files) {
   spriteFilter = animation.sprite.map(() => true);
 
   // Populate UI
-  animName.textContent = sourceFile.name;
+  animName.textContent = displayName;
   populateSpriteSelect();
   populateImagePanel();
   populateSpritePanel();
@@ -405,7 +456,7 @@ async function loadFromFiles(files) {
   }
 
   btnClear.disabled = false;
-  statusText.textContent = t('status.loaded', { name: sourceFile.name, images: animation.image.length, loaded, sprites: animation.sprite.length });
+  statusText.textContent = t('status.loaded', { name: displayName, images: animation.image.length, loaded, sprites: animation.sprite.length });
   dropHint.classList.add('hidden');
   resizeCanvas();
 }
@@ -1496,7 +1547,8 @@ function getExportName(ext) {
     .replace(/\.json$/i, '')
     .replace(/\.ya?ml$/i, '')
     .replace(/\.toml$/i, '')
-    .replace(/\.pam$/i, '');
+    .replace(/\.pam$/i, '')
+    .replace(/\.fla$/i, '');
   const sprName = activeSpriteIndex === -1 ? 'main' : (animation.sprite[activeSpriteIndex].name || 'sprite_' + activeSpriteIndex);
   return base + '_' + sprName + '.' + ext;
 }
@@ -1786,7 +1838,8 @@ function getConvertName(ext) {
     .replace(/\.json$/i, '')
     .replace(/\.ya?ml$/i, '')
     .replace(/\.toml$/i, '')
-    .replace(/\.pam$/i, '') + '.pam.' + ext;
+    .replace(/\.pam$/i, '')
+    .replace(/\.fla$/i, '') + '.pam.' + ext;
 }
 
 btnConvertJson.addEventListener('click', () => {
@@ -1827,7 +1880,8 @@ btnConvertPam.addEventListener('click', () => {
     .replace(/\.json$/i, '')
     .replace(/\.ya?ml$/i, '')
     .replace(/\.toml$/i, '')
-    .replace(/\.pam$/i, '') + '.pam';
+    .replace(/\.pam$/i, '')
+    .replace(/\.fla$/i, '') + '.pam';
   downloadBlob(blob, name);
 });
 
