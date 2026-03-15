@@ -1514,20 +1514,22 @@ btnExportPng.addEventListener('click', () => {
 });
 
 // ── Detect WebP support ──
-function isLikelySafari(): boolean {
-  const ua = navigator.userAgent;
-  return /Safari/i.test(ua)
-    && !/Chrome|Chromium|CriOS|Edg|OPR|OPiOS|Firefox|FxiOS/i.test(ua);
-}
-
 {
   const tc = document.createElement('canvas');
   tc.width = 1; tc.height = 1;
   const du = tc.toDataURL('image/webp');
-  if (!du.startsWith('data:image/webp') && !isLikelySafari()) {
+  if (!du.startsWith('data:image/webp')) {
     tc.toBlob((blob) => {
       if (!blob || blob.type !== 'image/webp') {
         btnExportWebp.style.display = 'none';
+      } else {
+        // toBlob claims WebP, verify RIFF/WEBP signature
+        blob.arrayBuffer().then(buf => {
+          const b = new Uint8Array(buf);
+          const isRIFF = b[0]===0x52 && b[1]===0x49 && b[2]===0x46 && b[3]===0x46;
+          const isWEBP = b[8]===0x57 && b[9]===0x45 && b[10]===0x42 && b[11]===0x50;
+          if (!isRIFF || !isWEBP) btnExportWebp.style.display = 'none';
+        });
       }
     }, 'image/webp', 0.9);
   }
@@ -1538,6 +1540,10 @@ async function extractWebpPayload(blob: Blob): Promise<Uint8Array> {
   const buf = await blob.arrayBuffer();
   const bytes = new Uint8Array(buf);
   const view = new DataView(buf);
+  // Validate RIFF/WEBP signature
+  const isRIFF = bytes[0]===0x52 && bytes[1]===0x49 && bytes[2]===0x46 && bytes[3]===0x46;
+  const isWEBP = bytes[8]===0x57 && bytes[9]===0x45 && bytes[10]===0x42 && bytes[11]===0x50;
+  if (!isRIFF || !isWEBP) throw new Error('Browser returned non-WebP data. WebP export is not supported on this browser.');
   let pos = 12;
   const parts: Uint8Array[] = [];
   while (pos + 8 <= bytes.length) {
@@ -1577,7 +1583,7 @@ async function encodeAnimatedWebp(canvasFrames: HTMLCanvasElement[], w: number, 
   const framePayloads: Uint8Array[] = [];
   for (const cvs of canvasFrames) {
     const blob = await new Promise<Blob | null>(r => cvs.toBlob(r, 'image/webp', 0.9));
-    if (!blob) throw new Error('Current browser does not support canvas WebP export.');
+    if (!blob || blob.type !== 'image/webp') throw new Error('Current browser does not support canvas WebP export.');
     framePayloads.push(await extractWebpPayload(blob));
   }
 
