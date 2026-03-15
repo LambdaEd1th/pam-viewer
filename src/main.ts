@@ -1514,12 +1514,22 @@ btnExportPng.addEventListener('click', () => {
 });
 
 // ── Detect WebP support ──
+function isLikelySafari(): boolean {
+  const ua = navigator.userAgent;
+  return /Safari/i.test(ua)
+    && !/Chrome|Chromium|CriOS|Edg|OPR|OPiOS|Firefox|FxiOS/i.test(ua);
+}
+
 {
   const tc = document.createElement('canvas');
   tc.width = 1; tc.height = 1;
   const du = tc.toDataURL('image/webp');
-  if (!du.startsWith('data:image/webp')) {
-    btnExportWebp.style.display = 'none';
+  if (!du.startsWith('data:image/webp') && !isLikelySafari()) {
+    tc.toBlob((blob) => {
+      if (!blob || blob.type !== 'image/webp') {
+        btnExportWebp.style.display = 'none';
+      }
+    }, 'image/webp', 0.9);
   }
 }
 
@@ -1566,7 +1576,8 @@ async function encodeAnimatedWebp(canvasFrames: HTMLCanvasElement[], w: number, 
   const durationMs = Math.round(1000 / fps);
   const framePayloads: Uint8Array[] = [];
   for (const cvs of canvasFrames) {
-    const blob = await new Promise<Blob>(r => cvs.toBlob(r as any, 'image/webp', 0.9));
+    const blob = await new Promise<Blob | null>(r => cvs.toBlob(r, 'image/webp', 0.9));
+    if (!blob) throw new Error('Current browser does not support canvas WebP export.');
     framePayloads.push(await extractWebpPayload(blob));
   }
 
