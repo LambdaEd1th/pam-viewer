@@ -1,4 +1,4 @@
-import type { RawPamJson } from './types';
+import type { RawPamJson } from '../types';
 
 const PAM_MAGIC = 0xBAF01954;
 

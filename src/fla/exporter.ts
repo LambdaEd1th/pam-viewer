@@ -1,5 +1,5 @@
-import { transformToMatrix } from './model';
-import type { Animation, Matrix6 } from './types';
+import { transformToMatrix } from '../model';
+import type { Animation, Matrix6 } from '../types';
 
 const XFL_NS = 'http://ns.adobe.com/xfl/2008/';
 const XSI_NS = 'http://www.w3.org/2001/XMLSchema-instance';

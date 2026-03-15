@@ -1,4 +1,4 @@
-import type { Animation, RawPamJson } from './types';
+import type { Animation, RawPamJson } from '../types';
 
 export function toRawJson(anim: Animation): RawPamJson {
   const transformToRaw = (t: Animation['image'][0]['transform']): number[] => {

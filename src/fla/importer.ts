@@ -1,4 +1,4 @@
-import type { RawPamJson } from './types';
+import type { RawPamJson } from '../types';
 
 async function readZipAsync(buf: ArrayBuffer): Promise<Map<string, Uint8Array>> {
   const view = new DataView(buf);

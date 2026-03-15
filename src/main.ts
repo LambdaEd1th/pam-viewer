@@ -1,11 +1,11 @@
 import './style.css';
 import { parseAnimation, parseImageFileName, parseSpriteFrameLabels } from './model';
 import { buildAllTimelines, renderFrame } from './renderer';
-import { decodePAM } from './pam-decoder';
-import { encodePAM } from './pam-encoder';
-import { toRawJson } from './pam-serializer';
-import { exportFLA } from './fla-exporter';
-import { importFLA, importXFLFromFiles } from './fla-importer';
+import { decodePAM } from './codec/decoder';
+import { encodePAM } from './codec/encoder';
+import { toRawJson } from './codec/serializer';
+import { exportFLA } from './fla/exporter';
+import { importFLA, importXFLFromFiles } from './fla/importer';
 import { t, getLang, setLang, onLangChange, getAvailableLangs, getLangLabel } from './i18n';
 import * as jsYamlMod from 'js-yaml';
 import * as smolTomlMod from 'smol-toml';
