@@ -637,7 +637,7 @@ function enableControls(enabled: boolean): void {
   btnNext.disabled = !enabled;
   btnExportPng.disabled = !enabled;
   btnExportApng.disabled = !enabled;
-  btnExportWebp.disabled = !enabled;
+  btnExportWebp.disabled = !enabled || !webpSupported;
   btnExportFla.disabled = !enabled;
   btnConvertJson.disabled = !enabled;
   btnConvertYaml.disabled = !enabled;
@@ -1514,6 +1514,12 @@ btnExportPng.addEventListener('click', () => {
 });
 
 // ── Detect WebP support ──
+let webpSupported = true;
+function disableWebpExport(): void {
+  webpSupported = false;
+  btnExportWebp.disabled = true;
+  btnExportWebp.title = 'WebP export is not supported on this browser';
+}
 {
   const tc = document.createElement('canvas');
   tc.width = 1; tc.height = 1;
@@ -1521,14 +1527,14 @@ btnExportPng.addEventListener('click', () => {
   if (!du.startsWith('data:image/webp')) {
     tc.toBlob((blob) => {
       if (!blob || blob.type !== 'image/webp') {
-        btnExportWebp.style.display = 'none';
+        disableWebpExport();
       } else {
         // toBlob claims WebP, verify RIFF/WEBP signature
         blob.arrayBuffer().then(buf => {
           const b = new Uint8Array(buf);
           const isRIFF = b[0]===0x52 && b[1]===0x49 && b[2]===0x46 && b[3]===0x46;
           const isWEBP = b[8]===0x57 && b[9]===0x45 && b[10]===0x42 && b[11]===0x50;
-          if (!isRIFF || !isWEBP) btnExportWebp.style.display = 'none';
+          if (!isRIFF || !isWEBP) disableWebpExport();
         });
       }
     }, 'image/webp', 0.9);
