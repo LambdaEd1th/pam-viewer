@@ -69,6 +69,26 @@ interface MainFrameInfo {
   command: [string, string][];
 }
 
+interface PamSidecar {
+  schema?: string;
+  version?: number;
+  frameRate?: number;
+  position?: [number, number];
+  size?: [number, number];
+  imageNames?: string[];
+}
+
+function parsePamSidecar(text: string | null): PamSidecar | null {
+  if (!text) return null;
+  try {
+    const raw = JSON.parse(text) as PamSidecar;
+    if (!raw || typeof raw !== 'object') return null;
+    return raw;
+  } catch {
+    return null;
+  }
+}
+
 function parseDOMDocument(xmlText: string): { width: number; height: number; frameRate: number; pamVersion: number; pamPositionX: number; pamPositionY: number; frames: MainFrameInfo[] } {
   const doc = parseXml(xmlText);
   const root = doc.documentElement;
@@ -370,6 +390,12 @@ export function importXFLFromFiles(files: Map<string, Uint8Array>): ImportResult
   const docXml = getText('DOMDocument.xml');
   if (!docXml) throw new Error('DOMDocument.xml not found in FLA/XFL');
   const { width, height, frameRate, pamVersion, pamPositionX, pamPositionY, frames: mainFrames } = parseDOMDocument(docXml);
+  const sidecar = parsePamSidecar(
+    getText('PAM.sidecar.json') ||
+    getText('pam.sidecar.json') ||
+    getText('PAM.sidecar') ||
+    getText('pam.sidecar')
+  );
 
   const idToName = new Map<number, string>();
   const idToSize = new Map<number, [number, number]>();
@@ -384,6 +410,15 @@ export function importXFLFromFiles(files: Map<string, Uint8Array>): ImportResult
     if (info) {
       idToName.set(idx, info.name);
       idToSize.set(idx, info.size);
+    }
+  }
+
+  if (sidecar?.imageNames && Array.isArray(sidecar.imageNames)) {
+    for (const idx of idToName.keys()) {
+      const fullName = sidecar.imageNames[idx - 1];
+      if (typeof fullName === 'string' && fullName.length > 0) {
+        idToName.set(idx, fullName);
+      }
     }
   }
 
@@ -451,10 +486,14 @@ export function importXFLFromFiles(files: Map<string, Uint8Array>): ImportResult
   }
 
   const result: RawPamJson = {
-    version: pamVersion,
-    frame_rate: frameRate,
-    position: [pamPositionX, pamPositionY],
-    size: [width, height],
+    version: (typeof sidecar?.version === 'number' ? sidecar.version : pamVersion),
+    frame_rate: (typeof sidecar?.frameRate === 'number' ? sidecar.frameRate : frameRate),
+    position: (Array.isArray(sidecar?.position) && sidecar!.position.length === 2
+      ? [Number(sidecar!.position[0]) || 0, Number(sidecar!.position[1]) || 0]
+      : [pamPositionX, pamPositionY]),
+    size: (Array.isArray(sidecar?.size) && sidecar!.size.length === 2
+      ? [Number(sidecar!.size[0]) || 0, Number(sidecar!.size[1]) || 0]
+      : [width, height]),
     image: images,
     sprite: sprites,
     main_sprite: mainSprite,

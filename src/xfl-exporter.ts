@@ -163,9 +163,7 @@ function genSource(index: number, image: Animation['image'][0], resolution: numb
   x.open('frames');
   x.open('DOMFrame', { index: '0', keyMode: '9728' });
   x.open('elements');
-  const bmpAttrs: Record<string, string> = { libraryItemName: mediaName };
-  if (image.name.includes('|')) bmpAttrs.pamName = image.name;
-  x.open('DOMBitmapInstance', bmpAttrs);
+  x.open('DOMBitmapInstance', { libraryItemName: mediaName });
   x.open('matrix');
   x.selfClose('Matrix', { a: scale, d: scale });
   x.close('matrix');
@@ -285,9 +283,6 @@ function genDOMDocument(anim: Animation): string {
     creatorInfo: 'Adobe Animate CC', platform: 'Windows',
     versionInfo: 'Saved by Animate Windows 19.0 build 326',
     objectsSnapTo: 'false',
-    pamVersion: String(anim.version),
-    pamPositionX: String(anim.position[0]),
-    pamPositionY: String(anim.position[1]),
   });
 
   x.open('folders');
@@ -401,6 +396,17 @@ function genDOMDocument(anim: Animation): string {
   return x.toString();
 }
 
+function genPamSidecar(anim: Animation): string {
+  return JSON.stringify({
+    schema: 'pam-sidecar-v1',
+    version: anim.version,
+    frameRate: anim.frameRate,
+    position: anim.position,
+    size: anim.size,
+    imageNames: anim.image.map((img) => img.name),
+  }, null, 2);
+}
+
 // ── ZIP writer (Store method, no compression) ──
 
 const crc32Table = new Uint32Array(256);
@@ -502,6 +508,7 @@ export function generateXFL(animation: Animation, resolution = 1200): Map<string
 
   files.set('main.xfl', 'PROXY-CS5');
   files.set('DOMDocument.xml', genDOMDocument(animation));
+  files.set('PAM.sidecar.json', genPamSidecar(animation));
 
   for (let i = 0; i < animation.image.length; i++) {
     files.set(`LIBRARY/source/source_${i + 1}.xml`, genSource(i, animation.image[i], resolution));
