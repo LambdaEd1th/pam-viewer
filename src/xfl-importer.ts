@@ -89,16 +89,13 @@ function parsePamSidecar(text: string | null): PamSidecar | null {
   }
 }
 
-function parseDOMDocument(xmlText: string): { width: number; height: number; frameRate: number; pamVersion: number; pamPositionX: number; pamPositionY: number; frames: MainFrameInfo[] } {
+function parseDOMDocument(xmlText: string): { width: number; height: number; frameRate: number; frames: MainFrameInfo[] } {
   const doc = parseXml(xmlText);
   const root = doc.documentElement;
 
   const width = getAttrF(root, 'width', 0);
   const height = getAttrF(root, 'height', 0);
   const frameRate = getAttrI(root, 'frameRate', 30);
-  const pamVersion = getAttrI(root, 'pamVersion', 6);
-  const pamPositionX = getAttrF(root, 'pamPositionX', 0);
-  const pamPositionY = getAttrF(root, 'pamPositionY', 0);
 
   const frames: MainFrameInfo[] = [];
 
@@ -148,7 +145,7 @@ function parseDOMDocument(xmlText: string): { width: number; height: number; fra
     }
   }
 
-  return { width, height, frameRate, pamVersion, pamPositionX, pamPositionY, frames };
+  return { width, height, frameRate, frames };
 }
 
 function parseSource(xmlText: string): { name: string; size: [number, number] } | null {
@@ -156,9 +153,8 @@ function parseSource(xmlText: string): { name: string; size: [number, number] } 
   const bmpInst = doc.querySelector('DOMBitmapInstance');
   if (!bmpInst) return null;
 
-  const pamName = bmpInst.getAttribute('pamName');
   const libItem = bmpInst.getAttribute('libraryItemName') || '';
-  const name = pamName || libItem.replace(/^media\//, '');
+  const name = libItem.replace(/^media\//, '');
 
   const dimSource = name.split('|')[0];
   const dimRe = /_(\d+)x(\d+)(?:_\d+)?$/;
@@ -389,7 +385,7 @@ export function importXFLFromFiles(files: Map<string, Uint8Array>): ImportResult
 
   const docXml = getText('DOMDocument.xml');
   if (!docXml) throw new Error('DOMDocument.xml not found in FLA/XFL');
-  const { width, height, frameRate, pamVersion, pamPositionX, pamPositionY, frames: mainFrames } = parseDOMDocument(docXml);
+  const { width, height, frameRate, frames: mainFrames } = parseDOMDocument(docXml);
   const sidecar = parsePamSidecar(
     getText('PAM.sidecar.json') ||
     getText('pam.sidecar.json') ||
@@ -486,11 +482,11 @@ export function importXFLFromFiles(files: Map<string, Uint8Array>): ImportResult
   }
 
   const result: RawPamJson = {
-    version: (typeof sidecar?.version === 'number' ? sidecar.version : pamVersion),
+    version: (typeof sidecar?.version === 'number' ? sidecar.version : 6),
     frame_rate: (typeof sidecar?.frameRate === 'number' ? sidecar.frameRate : frameRate),
     position: (Array.isArray(sidecar?.position) && sidecar!.position.length === 2
       ? [Number(sidecar!.position[0]) || 0, Number(sidecar!.position[1]) || 0]
-      : [pamPositionX, pamPositionY]),
+      : [0, 0]),
     size: (Array.isArray(sidecar?.size) && sidecar!.size.length === 2
       ? [Number(sidecar!.size[0]) || 0, Number(sidecar!.size[1]) || 0]
       : [width, height]),
