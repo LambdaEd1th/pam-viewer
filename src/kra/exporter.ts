@@ -10,10 +10,6 @@ interface RenderedLayer {
   compositeOp: string;
 }
 
-/**
- * Render each visible leaf layer for the given frame into separate ImageData objects.
- * Recursively resolves sprite references just like renderer.ts does.
- */
 function collectLayers(
   animation: Animation,
   textures: Map<string, HTMLImageElement>,
@@ -71,13 +67,11 @@ function collectLayers(
         finalMatrix[2], finalMatrix[3],
         finalMatrix[4], finalMatrix[5],
       );
-      ctx.globalAlpha = 1;
       const iw = imageDef.size ? imageDef.size.width : texture.naturalWidth;
       const ih = imageDef.size ? imageDef.size.height : texture.naturalHeight;
       ctx.drawImage(texture, 0, 0, iw, ih);
 
       const imageData = ctx.getImageData(0, 0, w, h);
-      // Bake color tint into the pixel data
       if (worldColor.r !== 1 || worldColor.g !== 1 || worldColor.b !== 1 || worldColor.a !== 1) {
         const d = imageData.data;
         for (let i = 0; i < d.length; i += 4) {
@@ -98,7 +92,96 @@ function collectLayers(
   }
 }
 
-// ── PNG encoder (minimal, uncompressed for per-layer data) ──
+// ── LZF compressor (literal-only, compatible with Krita's lzf_decompress) ──
+
+function lzfCompress(input: Uint8Array): Uint8Array {
+  const maxLit = 32;
+  const out = new Uint8Array(input.length + Math.ceil(input.length / maxLit) + 1);
+  let op = 0, ip = 0;
+  while (ip < input.length) {
+    const n = Math.min(input.length - ip, maxLit);
+    out[op++] = n - 1; // literal control byte: 000LLLLL
+    out.set(input.subarray(ip, ip + n), op);
+    op += n;
+    ip += n;
+  }
+  return out.subarray(0, op);
+}
+
+// ── Krita tile data writer ──
+// Krita uses 64×64 tiles, pixels in BGRA order, LZF compressed, version 1 format.
+
+const TILE = 64;
+const PX = 4; // BGRA
+
+function writeInt32LE(arr: Uint8Array, off: number, val: number): void {
+  arr[off]     =  val        & 0xff;
+  arr[off + 1] = (val >>> 8) & 0xff;
+  arr[off + 2] = (val >>> 16) & 0xff;
+  arr[off + 3] = (val >>> 24) & 0xff;
+}
+
+function buildTileData(imageData: ImageData, w: number, h: number): Uint8Array {
+  const tilesX = Math.ceil(w / TILE);
+  const tilesY = Math.ceil(h / TILE);
+  const parts: Uint8Array[] = [];
+
+  // Version header (int32 LE = 1)
+  const ver = new Uint8Array(4);
+  writeInt32LE(ver, 0, 1);
+  parts.push(ver);
+
+  const src = imageData.data;
+  const tilePixels = new Uint8Array(TILE * TILE * PX);
+
+  for (let row = 0; row < tilesY; row++) {
+    for (let col = 0; col < tilesX; col++) {
+      tilePixels.fill(0);
+      let hasContent = false;
+
+      for (let ty = 0; ty < TILE; ty++) {
+        const sy = row * TILE + ty;
+        if (sy >= h) break;
+        for (let tx = 0; tx < TILE; tx++) {
+          const sx = col * TILE + tx;
+          if (sx >= w) break;
+          const si = (sy * w + sx) * 4;
+          const di = (ty * TILE + tx) * PX;
+          // Canvas RGBA → Krita BGRA
+          tilePixels[di]     = src[si + 2]; // B
+          tilePixels[di + 1] = src[si + 1]; // G
+          tilePixels[di + 2] = src[si];     // R
+          tilePixels[di + 3] = src[si + 3]; // A
+          if (src[si + 3] !== 0) hasContent = true;
+        }
+      }
+
+      if (!hasContent) continue; // skip fully transparent tiles
+
+      const compressed = lzfCompress(tilePixels);
+
+      // Tile header: dataLength(int32), col(int32), row(int32)
+      const hdr = new Uint8Array(12);
+      writeInt32LE(hdr, 0, compressed.length);
+      writeInt32LE(hdr, 4, col);
+      writeInt32LE(hdr, 8, row);
+      parts.push(hdr);
+      parts.push(compressed);
+    }
+  }
+
+  // End marker: dataLength = 0
+  parts.push(new Uint8Array(4));
+
+  let total = 0;
+  for (const p of parts) total += p.length;
+  const result = new Uint8Array(total);
+  let off = 0;
+  for (const p of parts) { result.set(p, off); off += p.length; }
+  return result;
+}
+
+// ── PNG helper for merged image ──
 
 function canvasToPngBytes(canvas: HTMLCanvasElement): Promise<Uint8Array> {
   return new Promise((resolve, reject) => {
@@ -162,7 +245,7 @@ function buildZip(files: ZipEntry[]): Uint8Array {
     view.setUint32(pos, 0x04034b50, true); pos += 4;
     view.setUint16(pos, 20, true); pos += 2;
     view.setUint16(pos, 0, true); pos += 2;
-    view.setUint16(pos, 0, true); pos += 2; // store
+    view.setUint16(pos, 0, true); pos += 2;
     view.setUint16(pos, 0, true); pos += 2;
     view.setUint16(pos, 0x0021, true); pos += 2;
     view.setUint32(pos, crcVal, true); pos += 4;
@@ -210,13 +293,11 @@ function buildZip(files: ZipEntry[]): Uint8Array {
   return bytes;
 }
 
-// ── XML escaping ──
+// ── XML helpers ──
 
 function esc(s: string): string {
   return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }
-
-// ── Unique ID generator ──
 
 function uuid(): string {
   return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => {
@@ -227,15 +308,18 @@ function uuid(): string {
 
 // ── KRA XML generators ──
 
+const IMAGE_NAME = 'pam-export';
+
 function genMaindoc(w: number, h: number, layers: { name: string; filename: string; compositeOp: string; opacity: number }[]): string {
+  // Krita XML: top-most layer first
   const layerXml = layers.map(l =>
-    `       <layer channelflags="" channellockflags="" colorlabel="0" colorspacename="RGBA" compositeop="${esc(l.compositeOp)}" filename="${esc(l.filename)}" intimeline="1" locked="0" name="${esc(l.name)}" nodetype="paintlayer" onionskin="0" opacity="${Math.round(l.opacity * 255)}" uuid="{${uuid()}}" visible="1" x="0" y="0" collapsed="0"/>`
-  ).reverse().join('\n');  // Krita layers: top = first in XML
+    `   <layer channelflags="" channellockflags="" colorlabel="0" colorspacename="RGBA" compositeop="${esc(l.compositeOp)}" filename="${esc(l.filename)}" intimeline="1" locked="0" name="${esc(l.name)}" nodetype="paintlayer" onionskin="0" opacity="${Math.round(l.opacity * 255)}" uuid="{${uuid()}}" visible="1" x="0" y="0" collapsed="0"/>`
+  ).reverse().join('\n');
 
   return `<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE DOC PUBLIC '-//KDE//DTD krita 2.0//EN' 'http://www.calligra.org/DTD/krita-2.0.dtd'>
 <DOC xmlns="http://www.calligra.org/DTD/krita" syntaxVersion="2.0" kritaVersion="5.2.0">
- <IMAGE colorspacename="RGBA" width="${w}" height="${h}" mime="application/x-krita" name="pam-export" description="" x-res="72" y-res="72" profile="sRGB-elle-V2-srgbtrc.icc">
+ <IMAGE colorspacename="RGBA" width="${w}" height="${h}" mime="application/x-krita" name="${IMAGE_NAME}" description="" x-res="72" y-res="72" profile="sRGB-elle-V2-srgbtrc.icc">
   <layers>
 ${layerXml}
   </layers>
@@ -283,20 +367,24 @@ export async function exportKRA(
   // mimetype must be first entry
   entries.push({ name: 'mimetype', data: enc.encode('application/x-krita') });
 
-  // Layer PNGs
+  // Layer tile data files (Krita internal format)
   const layerInfos: { name: string; filename: string; compositeOp: string; opacity: number }[] = [];
+  const defaultPixel = new Uint8Array(4); // BGRA transparent [0,0,0,0]
+
   for (let i = 0; i < rendered.length; i++) {
     const rl = rendered[i];
-    const dirName = `layer${i + 1}`;
-    const filename = `${dirName}/data.png`;
+    const layerFile = `layer${i + 1}`;
 
-    const cvs = imageDataToCanvas(rl.imageData, w, h);
-    const pngBytes = await canvasToPngBytes(cvs);
-    entries.push({ name: filename, data: pngBytes });
+    // Tile data: <imagename>/layers/<layerfile>
+    const tileData = buildTileData(rl.imageData, w, h);
+    entries.push({ name: `${IMAGE_NAME}/layers/${layerFile}`, data: tileData });
+
+    // Default pixel: <imagename>/layers/<layerfile>.defaultpixel
+    entries.push({ name: `${IMAGE_NAME}/layers/${layerFile}.defaultpixel`, data: defaultPixel });
 
     layerInfos.push({
       name: rl.name,
-      filename: dirName,
+      filename: layerFile,
       compositeOp: rl.compositeOp,
       opacity: rl.opacity,
     });
@@ -319,7 +407,7 @@ export async function exportKRA(
   const mergedPng = await canvasToPngBytes(mergedCvs);
   entries.push({ name: 'mergedimage.png', data: mergedPng });
 
-  // XML files
+  // XML metadata
   entries.push({ name: 'maindoc.xml', data: enc.encode(genMaindoc(w, h, layerInfos)) });
   entries.push({ name: 'documentinfo.xml', data: enc.encode(genDocumentInfo()) });
 
