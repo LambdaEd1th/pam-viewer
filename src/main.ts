@@ -6,6 +6,7 @@ import { encodePAM } from './codec/encoder';
 import { toRawJson } from './codec/serializer';
 import { exportFLA } from './fla/exporter';
 import { importFLA, importXFLFromFiles } from './fla/importer';
+import { exportKRA } from './kra/exporter';
 import { t, getLang, setLang, onLangChange, getAvailableLangs, getLangLabel } from './i18n';
 import * as jsYamlMod from 'js-yaml';
 import * as smolTomlMod from 'smol-toml';
@@ -87,6 +88,7 @@ const btnExportPng = $<HTMLButtonElement>('btn-export-png');
 const btnExportApng = $<HTMLButtonElement>('btn-export-apng');
 const btnExportWebp = $<HTMLButtonElement>('btn-export-webp');
 const btnExportFla = $<HTMLButtonElement>('btn-export-fla');
+const btnExportKra = $<HTMLButtonElement>('btn-export-kra');
 const btnConvertJson = $<HTMLButtonElement>('btn-convert-json');
 const btnConvertYaml = $<HTMLButtonElement>('btn-convert-yaml');
 const btnConvertToml = $<HTMLButtonElement>('btn-convert-toml');
@@ -639,6 +641,7 @@ function enableControls(enabled: boolean): void {
   btnExportApng.disabled = !enabled;
   btnExportWebp.disabled = !enabled || !webpSupported;
   btnExportFla.disabled = !enabled;
+  btnExportKra.disabled = !enabled;
   btnConvertJson.disabled = !enabled;
   btnConvertYaml.disabled = !enabled;
   btnConvertToml.disabled = !enabled;
@@ -1802,6 +1805,20 @@ btnExportFla.addEventListener('click', async () => {
     downloadBlob(blob, baseName + '.fla');
   } finally {
     btnExportFla.disabled = false;
+  }
+});
+
+// ── Export KRA ──
+btnExportKra.addEventListener('click', async () => {
+  if (!animation || !activeSprite) return;
+  const { w, h } = getExportSize();
+  const scale = parseInt(sizeScaleSelect.value) || 1;
+  btnExportKra.disabled = true;
+  try {
+    const blob = await exportKRA(animation, textures, spriteTimelines!, activeSpriteIndex, currentFrame, w, h, scale);
+    downloadBlob(blob, getExportName('kra'));
+  } finally {
+    btnExportKra.disabled = false;
   }
 });
 
