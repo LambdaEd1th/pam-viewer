@@ -13,6 +13,8 @@ import type { Animation, TimelinesMap } from './types';
 
 // ── Settings persistence ──
 const SETTINGS_KEY = 'pam-viewer-settings';
+const REFERENCE_STAGE_HEIGHT = 1536;
+const DEFAULT_VIEWPORT_FILL = 2 / 3;
 
 function loadSettings(): void {
   try {
@@ -120,6 +122,26 @@ let rafId: number | null = null;
 let zoom = 1.0;
 let panX = 0;
 let panY = 0;
+
+function getDefaultZoom(): number {
+  const dpr = window.devicePixelRatio || 1;
+  const effectiveCanvasHeightInPixels = canvas.height > 0
+    ? canvas.height
+    : stageContainer.getBoundingClientRect().height * dpr;
+  const effectiveCanvasHeight = effectiveCanvasHeightInPixels > 0
+    ? effectiveCanvasHeightInPixels
+    : REFERENCE_STAGE_HEIGHT;
+  // Use the requested default view: scale a 1536px-tall reference stage to 2/3
+  // of the available canvas height, capped at 100%.
+  return Math.min((effectiveCanvasHeight / REFERENCE_STAGE_HEIGHT) * DEFAULT_VIEWPORT_FILL, 1);
+}
+
+function resetView(): void {
+  zoom = getDefaultZoom();
+  panX = 0;
+  panY = 0;
+  updateZoomDisplay();
+}
 
 // Filters
 let imageFilter: boolean[] = [];
@@ -402,10 +424,7 @@ async function loadFromFiles(files: File[]): Promise<void> {
 
   spriteTimelines = buildAllTimelines(animation!);
 
-  zoom = 1.0;
-  panX = 0;
-  panY = 0;
-  updateZoomDisplay();
+  resetView();
 
   imageFilter = animation!.image.map(() => true);
   spriteFilter = animation!.sprite.map(() => true);
@@ -742,31 +761,34 @@ function updateSizeDisplay(): void {
 
 function updateCoordDisplay(e: PointerEvent | MouseEvent): void {
   if (!animation) { coordDisplay.textContent = ''; return; }
-  const rect = canvas.getBoundingClientRect();
-  const dpr = window.devicePixelRatio || 1;
-  const cx = canvas.width / 2 + panX * dpr;
-  const cy = canvas.height / 2 + panY * dpr;
-  const sx = ((e.clientX - rect.left) * dpr - cx) / zoom + animation.position[0];
-  const sy = ((e.clientY - rect.top) * dpr - cy) / zoom + animation.position[1];
-  coordDisplay.textContent = `${Math.round(sx)}, ${Math.round(sy)}`;
+  const { ax, ay } = clientToAnimSpace(e.clientX, e.clientY);
+  coordDisplay.textContent = `${Math.round(ax)}, ${Math.round(ay)}`;
 }
 
 canvas.addEventListener('wheel', (e) => {
   e.preventDefault();
   const rect = canvas.getBoundingClientRect();
-  const mouseX = e.clientX - rect.left;
-  const mouseY = e.clientY - rect.top;
-  const halfW = rect.width / 2;
-  const halfH = rect.height / 2;
+  if (!animation) return;
+
+  const dpr = window.devicePixelRatio || 1;
+  const mouseX = (e.clientX - rect.left) * dpr;
+  const mouseY = (e.clientY - rect.top) * dpr;
+  const { ax, ay } = clientToAnimSpace(e.clientX, e.clientY);
 
   const oldZoom = zoom;
   const factor = e.deltaY > 0 ? 0.9 : 1.1;
   zoom = Math.max(0.05, Math.min(100, zoom * factor));
-
-  const dx = mouseX - halfW;
-  const dy = mouseY - halfH;
-  panX = dx - (dx - panX) * zoom / oldZoom;
-  panY = dy - (dy - panY) * zoom / oldZoom;
+  if (zoom !== oldZoom) {
+    // Solve pan so:
+    //   mousePx = canvasCenterPx + panPx + (animPoint - stageCenter) * zoom
+    // Rearranging this preserves the same animation-space point under the cursor.
+    const canvasCenterX = canvas.width / 2;
+    const canvasCenterY = canvas.height / 2;
+    const stageCenterX = animation.size[0] / 2;
+    const stageCenterY = animation.size[1] / 2;
+    panX = (mouseX - canvasCenterX - (ax - stageCenterX) * zoom) / dpr;
+    panY = (mouseY - canvasCenterY - (ay - stageCenterY) * zoom) / dpr;
+  }
 
   updateZoomDisplay();
   drawCurrentFrame();
@@ -791,10 +813,10 @@ function clientToAnimSpace(clientX: number, clientY: number): { ax: number; ay: 
   const dpr = window.devicePixelRatio || 1;
   const cx = canvas.width / 2 + panX * dpr;
   const cy = canvas.height / 2 + panY * dpr;
-  const ox = animation!.position[0];
-  const oy = animation!.position[1];
-  const ax = ((clientX - rect.left) * dpr - cx) / zoom + ox;
-  const ay = ((clientY - rect.top) * dpr - cy) / zoom + oy;
+  const stageCenterX = animation!.size[0] / 2;
+  const stageCenterY = animation!.size[1] / 2;
+  const ax = ((clientX - rect.left) * dpr - cx) / zoom + stageCenterX;
+  const ay = ((clientY - rect.top) * dpr - cy) / zoom + stageCenterY;
   return { ax, ay };
 }
 
@@ -926,10 +948,7 @@ canvas.addEventListener('pointerup', (e) => {
 });
 
 btnZoomReset.addEventListener('click', () => {
-  zoom = 1.0;
-  panX = 0;
-  panY = 0;
-  updateZoomDisplay();
+  resetView();
   drawCurrentFrame();
 });
 
@@ -1304,10 +1323,10 @@ function drawCurrentFrame(): void {
   const cx = canvas.width / 2 + panX * dpr;
   const cy = canvas.height / 2 + panY * dpr;
   const s = zoom;
-  const originX = animation.position[0];
-  const originY = animation.position[1];
+  const centerOffsetX = animation.size[0] / 2 - animation.position[0];
+  const centerOffsetY = animation.size[1] / 2 - animation.position[1];
 
-  const baseMatrix: [number, number, number, number, number, number] = [s, 0, 0, s, cx, cy];
+  const baseMatrix: [number, number, number, number, number, number] = [s, 0, 0, s, cx - centerOffsetX * s, cy - centerOffsetY * s];
   const baseColor = { r: 1, g: 1, b: 1, a: 1 };
 
   renderFrame(
@@ -1320,14 +1339,14 @@ function drawCurrentFrame(): void {
   if (boundaryCheck.checked) {
     const bw = animation.size[0];
     const bh = animation.size[1];
-    ctx.setTransform(s, 0, 0, s, cx, cy);
+    ctx.setTransform(s, 0, 0, s, cx - centerOffsetX * s, cy - centerOffsetY * s);
     ctx.strokeStyle = 'rgba(0, 200, 255, 0.5)';
     ctx.lineWidth = 1 / s;
-    ctx.strokeRect(-originX, -originY, bw, bh);
+    ctx.strokeRect(-animation.position[0], -animation.position[1], bw, bh);
 
     const handleSize = 5 / s;
     ctx.fillStyle = 'rgba(0, 200, 255, 0.8)';
-    const bx = -originX, by = -originY;
+    const bx = -animation.position[0], by = -animation.position[1];
     const handles: [number, number][] = [
       [bx, by], [bx + bw / 2, by], [bx + bw, by],
       [bx, by + bh / 2], [bx + bw, by + bh / 2],
