@@ -1,58 +1,63 @@
 # PAM Viewer
 
-A browser-based viewer and exporter for PopCap PAM (PopAnim) animation files, commonly used in *Plants vs. Zombies 2*.
+A browser-based tool for **PopCap PAM / PopAnim** animation assets, with preview, filtering, export, and format-conversion features for *Plants vs. Zombies 2* workflows.
 
-**Live Demo**: https://lambdaed1th.github.io/pam-viewer/
+- Live Demo: <https://lambdaed1th.github.io/pam-viewer/>
+- Author: [@LambdaEd1th](https://github.com/LambdaEd1th)
 
 ## Features
 
-- **Load & Play**: Drag-and-drop a folder containing `.pam.json` (or `.pam` binary) and PNG textures
-- **Playback Controls**: Play/pause, frame stepping, speed adjustment, loop, reverse
-- **Frame Labels**: Jump to named animation labels (idle, walk, attack, etc.)
-- **Sprite & Image Filters**: Toggle individual sprites/images on or off with regex filtering
-- **Plant Layers / Zombie States**: Specialized layer selectors for PvZ2 animations
-- **Zoom & Pan**: Scroll to zoom, drag to pan, reset with one click
-- **Export**:
-  - **PNG** — current frame
-  - **GIF** — animated GIF of the current frame range
-  - **Sprite Sheet** — all frames in a single PNG
-  - **FLA** — Adobe Animate project (XFL format in ZIP), including media textures
+- **Multi-format loading**: `.pam`, `.pam.json`, `.yaml`, `.toml`, plus `.fla` / XFL folders
+- **Playback controls**: play/pause, frame step, loop, reverse, frame range, FPS presets
+- **Visual filters**: Sprite/Image panels with regex filtering and quick all/none toggles
+- **Stage interaction**: zoom, pan, reset view, optional boundary display
+- **PvZ2-specific options**: plant layer, zombie state, ground swatch
+- **Export**: PNG (current frame), APNG, WebP, FLA
+- **Format conversion**: export as JSON / YAML / TOML / PAM binary
+- **Multilingual UI**: Chinese / English
+
+## Quick Start
+
+### 1) Install dependencies
+
+```bash
+npm install
+```
+
+### 2) Start local development
+
+```bash
+npm run dev
+```
+
+### 3) Build
+
+```bash
+npm run build
+```
+
+### 4) Preview production build
+
+```bash
+npm run preview
+```
 
 ## Usage
 
-1. Open the page in a modern browser
-2. Click 📂 or drag-and-drop a folder containing:
-   - A `.pam.json` or `.pam` file (the animation definition)
-   - PNG images referenced by the animation
-3. Use the toolbar to control playback and export
-
-## File Format
-
-PAM (PopAnim) is PopCap's proprietary animation format. Each animation contains:
-- **Images**: bitmap references with affine transforms
-- **Sprites**: timelines of layered image/sprite instances with per-frame transforms and color tinting
-- **Main Sprite**: the root timeline that composes all sprites
-
-The viewer can load both the JSON representation (`.pam.json`) and the raw binary format (`.pam`).
-
-## XFL/FLA Export
-
-The FLA export generates a complete Adobe Animate project structure:
-- `DOMDocument.xml` — project metadata, flow/command/sprite layers
-- `LIBRARY/source/` — bitmap source symbols
-- `LIBRARY/image/` — image symbols with transforms
-- `LIBRARY/sprite/` — animated sprite symbols
-- `LIBRARY/main.xml` — main animation timeline
-- `LIBRARY/media/` — PNG textures (when loaded)
+1. Open the app, click **📂 Load**, or drag a resource folder onto the canvas.
+2. A typical resource folder contains:
+   - one animation definition file (`.pam` / `.pam.json` / `.yaml` / `.toml` / `.fla`)
+   - related PNG texture files
+3. Use the top toolbar for playback control, filtering, export, and conversion.
 
 ## Tech Stack
 
-Pure HTML5/CSS/JavaScript (ES modules), no build tools or dependencies. Runs entirely in the browser.
-
-## Author
-
-[LambdaEd1th](https://github.com/LambdaEd1th)
+- TypeScript
+- Vite
+- HTML5 Canvas
+- js-yaml / smol-toml
 
 ## License
 
-This project is licensed under the GNU General Public License v3.0 — see the [LICENSE](LICENSE) file for details.
+This project is licensed under the **GNU Affero General Public License v3.0 (AGPL-3.0)**.
+See [LICENSE](LICENSE) for details.
