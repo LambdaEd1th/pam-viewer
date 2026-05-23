@@ -123,7 +123,7 @@ let panY = 0;
 
 function getDefaultZoom(): number {
   const dpr = window.devicePixelRatio || 1;
-  const effectiveCanvasHeight = canvas.height || stageContainer.getBoundingClientRect().height * dpr;
+  const effectiveCanvasHeight = canvas.height || stageContainer.getBoundingClientRect().height * dpr || 1536;
   // Use the requested default view: scale a 1536px-tall reference stage to 2/3
   // of the available canvas height, capped at 100%.
   return Math.min((effectiveCanvasHeight / 1536) * (2 / 3), 1);
@@ -772,7 +772,9 @@ canvas.addEventListener('wheel', (e) => {
   const factor = e.deltaY > 0 ? 0.9 : 1.1;
   zoom = Math.max(0.05, Math.min(100, zoom * factor));
   if (zoom !== oldZoom) {
-    // Keep the same animation-space point under the cursor after zooming.
+    // Solve pan so:
+    //   mousePx = canvasCenterPx + panPx + (animPoint - stageCenter) * zoom
+    // This keeps the same animation-space point under the cursor after zooming.
     const canvasCenterX = canvas.width / 2;
     const canvasCenterY = canvas.height / 2;
     const stageCenterX = animation.size[0] / 2;
