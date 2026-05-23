@@ -13,6 +13,8 @@ import type { Animation, TimelinesMap } from './types';
 
 // ── Settings persistence ──
 const SETTINGS_KEY = 'pam-viewer-settings';
+const REFERENCE_STAGE_HEIGHT = 1536;
+const DEFAULT_VIEWPORT_FILL = 2 / 3;
 
 function loadSettings(): void {
   try {
@@ -123,13 +125,15 @@ let panY = 0;
 
 function getDefaultZoom(): number {
   const dpr = window.devicePixelRatio || 1;
-  const measuredCanvasHeight = canvas.height > 0
+  const effectiveCanvasHeightInPixels = canvas.height > 0
     ? canvas.height
     : stageContainer.getBoundingClientRect().height * dpr;
-  const effectiveCanvasHeight = measuredCanvasHeight > 0 ? measuredCanvasHeight : 1536;
+  const effectiveCanvasHeight = effectiveCanvasHeightInPixels > 0
+    ? effectiveCanvasHeightInPixels
+    : REFERENCE_STAGE_HEIGHT;
   // Use the requested default view: scale a 1536px-tall reference stage to 2/3
   // of the available canvas height, capped at 100%.
-  return Math.min((effectiveCanvasHeight / 1536) * (2 / 3), 1);
+  return Math.min((effectiveCanvasHeight / REFERENCE_STAGE_HEIGHT) * DEFAULT_VIEWPORT_FILL, 1);
 }
 
 function resetView(): void {
@@ -809,8 +813,10 @@ function clientToAnimSpace(clientX: number, clientY: number): { ax: number; ay: 
   const dpr = window.devicePixelRatio || 1;
   const cx = canvas.width / 2 + panX * dpr;
   const cy = canvas.height / 2 + panY * dpr;
-  const ax = ((clientX - rect.left) * dpr - cx) / zoom + animation!.size[0] / 2;
-  const ay = ((clientY - rect.top) * dpr - cy) / zoom + animation!.size[1] / 2;
+  const stageCenterX = animation!.size[0] / 2;
+  const stageCenterY = animation!.size[1] / 2;
+  const ax = ((clientX - rect.left) * dpr - cx) / zoom + stageCenterX;
+  const ay = ((clientY - rect.top) * dpr - cy) / zoom + stageCenterY;
   return { ax, ay };
 }
 
