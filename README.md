@@ -1,58 +1,63 @@
 # PAM Viewer
 
-A browser-based viewer and exporter for PopCap PAM (PopAnim) animation files, commonly used in *Plants vs. Zombies 2*.
+一个面向 **PopCap PAM / PopAnim** 动画文件的浏览器工具，支持预览、筛选、导出与格式互转，适用于《植物大战僵尸 2》相关动画资源工作流。
 
-**Live Demo**: https://lambdaed1th.github.io/pam-viewer/
+- 在线体验：<https://lambdaed1th.github.io/pam-viewer/>
+- 作者：[@LambdaEd1th](https://github.com/LambdaEd1th)
 
-## Features
+## 功能概览
 
-- **Load & Play**: Drag-and-drop a folder containing `.pam.json` (or `.pam` binary) and PNG textures
-- **Playback Controls**: Play/pause, frame stepping, speed adjustment, loop, reverse
-- **Frame Labels**: Jump to named animation labels (idle, walk, attack, etc.)
-- **Sprite & Image Filters**: Toggle individual sprites/images on or off with regex filtering
-- **Plant Layers / Zombie States**: Specialized layer selectors for PvZ2 animations
-- **Zoom & Pan**: Scroll to zoom, drag to pan, reset with one click
-- **Export**:
-  - **PNG** — current frame
-  - **GIF** — animated GIF of the current frame range
-  - **Sprite Sheet** — all frames in a single PNG
-  - **FLA** — Adobe Animate project (XFL format in ZIP), including media textures
+- **多格式加载**：支持 `.pam`、`.pam.json`、`.yaml`、`.toml`，并可读取 `.fla` / XFL 目录
+- **播放控制**：播放/暂停、逐帧、循环、反向、帧范围、FPS 速度预设
+- **可视化筛选**：Sprite / Image 面板，支持正则过滤和快速全选/全不选
+- **舞台交互**：缩放、平移、重置视图，支持边界显示
+- **PvZ2 特化选项**：植物层、僵尸状态、地面色板
+- **导出能力**：PNG（当前帧）、APNG、WebP、FLA
+- **格式转换**：可导出为 JSON / YAML / TOML / PAM 二进制
+- **多语言界面**：中文 / English
 
-## Usage
+## 快速开始
 
-1. Open the page in a modern browser
-2. Click 📂 or drag-and-drop a folder containing:
-   - A `.pam.json` or `.pam` file (the animation definition)
-   - PNG images referenced by the animation
-3. Use the toolbar to control playback and export
+### 1) 安装依赖
 
-## File Format
+```bash
+npm install
+```
 
-PAM (PopAnim) is PopCap's proprietary animation format. Each animation contains:
-- **Images**: bitmap references with affine transforms
-- **Sprites**: timelines of layered image/sprite instances with per-frame transforms and color tinting
-- **Main Sprite**: the root timeline that composes all sprites
+### 2) 本地开发
 
-The viewer can load both the JSON representation (`.pam.json`) and the raw binary format (`.pam`).
+```bash
+npm run dev
+```
 
-## XFL/FLA Export
+### 3) 构建
 
-The FLA export generates a complete Adobe Animate project structure:
-- `DOMDocument.xml` — project metadata, flow/command/sprite layers
-- `LIBRARY/source/` — bitmap source symbols
-- `LIBRARY/image/` — image symbols with transforms
-- `LIBRARY/sprite/` — animated sprite symbols
-- `LIBRARY/main.xml` — main animation timeline
-- `LIBRARY/media/` — PNG textures (when loaded)
+```bash
+npm run build
+```
 
-## Tech Stack
+### 4) 预览构建产物
 
-Pure HTML5/CSS/JavaScript (ES modules), no build tools or dependencies. Runs entirely in the browser.
+```bash
+npm run preview
+```
 
-## Author
+## 使用说明
 
-[LambdaEd1th](https://github.com/LambdaEd1th)
+1. 打开应用后点击 **📂 Load**，或直接拖拽动画资源文件夹到画布区域
+2. 资源包中通常包含：
+   - 一个动画定义文件（如 `.pam` / `.pam.json` / `.yaml` / `.toml` / `.fla`）
+   - 若干 PNG 贴图资源
+3. 在顶部工具栏中完成播放控制、筛选、导出与格式转换
+
+## 技术栈
+
+- TypeScript
+- Vite
+- HTML5 Canvas
+- js-yaml / smol-toml
 
 ## License
 
-This project is licensed under the GNU General Public License v3.0 — see the [LICENSE](LICENSE) file for details.
+本项目采用 **GNU Affero General Public License v3.0 (AGPL-3.0)** 许可发布。
+详情请见 [LICENSE](LICENSE)。
