@@ -123,8 +123,8 @@ let panY = 0;
 
 function getDefaultZoom(): number {
   const dpr = window.devicePixelRatio || 1;
-  const screenHeight = canvas.height || stageContainer.getBoundingClientRect().height * dpr;
-  return Math.min((screenHeight / 1536) * (2 / 3), 1);
+  const effectiveCanvasHeight = canvas.height || stageContainer.getBoundingClientRect().height * dpr;
+  return Math.min((effectiveCanvasHeight / 1536) * (2 / 3), 1);
 }
 
 function resetView(): void {
@@ -752,8 +752,8 @@ function updateSizeDisplay(): void {
 
 function updateCoordDisplay(e: PointerEvent | MouseEvent): void {
   if (!animation) { coordDisplay.textContent = ''; return; }
-  const { ax: sx, ay: sy } = clientToAnimSpace(e.clientX, e.clientY);
-  coordDisplay.textContent = `${Math.round(sx)}, ${Math.round(sy)}`;
+  const { ax, ay } = clientToAnimSpace(e.clientX, e.clientY);
+  coordDisplay.textContent = `${Math.round(ax)}, ${Math.round(ay)}`;
 }
 
 canvas.addEventListener('wheel', (e) => {
@@ -770,6 +770,7 @@ canvas.addEventListener('wheel', (e) => {
   const factor = e.deltaY > 0 ? 0.9 : 1.1;
   zoom = Math.max(0.05, Math.min(100, zoom * factor));
   if (zoom !== oldZoom) {
+    // Keep the same animation-space point under the cursor after zooming.
     panX = (mouseX - canvas.width / 2 - (ax - animation.size[0] / 2) * zoom) / dpr;
     panY = (mouseY - canvas.height / 2 - (ay - animation.size[1] / 2) * zoom) / dpr;
   }
