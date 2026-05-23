@@ -4,6 +4,36 @@ import type { Animation, Color, Matrix6, LayerSnapshot, SpriteTimeline, Timeline
 const DEFAULT_COLOR: Color = { r: 1, g: 1, b: 1, a: 1 };
 const IDENTITY_MATRIX: Matrix6 = [1, 0, 0, 1, 0, 0];
 
+// Cache for SVG colour-matrix filter strings keyed by rounded RGB values
+const colorFilterCache = new Map<string, string>();
+
+function buildColorFilter(r: number, g: number, b: number): string {
+  const key = `${r.toFixed(4)},${g.toFixed(4)},${b.toFixed(4)}`;
+  let filter = colorFilterCache.get(key);
+  if (filter === undefined) {
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg"><filter id="cm"><feColorMatrix type="matrix" values="${r} 0 0 0 0 0 ${g} 0 0 0 0 0 ${b} 0 0 0 0 0 1 0"/></filter></svg>`;
+    filter = `url("data:image/svg+xml,${encodeURIComponent(svg)}#cm")`;
+    colorFilterCache.set(key, filter);
+  }
+  return filter;
+}
+
+// Pool of reusable offscreen canvases for additive sprite compositing.
+// A stack-based pool is safe for recursive renderFrame calls: each nested
+// call pops its own distinct canvas, avoiding aliasing between levels.
+const offscreenCanvasPool: HTMLCanvasElement[] = [];
+
+function acquireOffscreenCanvas(w: number, h: number): HTMLCanvasElement {
+  const canvas = offscreenCanvasPool.pop() ?? document.createElement('canvas');
+  canvas.width = w;
+  canvas.height = h;
+  return canvas;
+}
+
+function releaseOffscreenCanvas(canvas: HTMLCanvasElement): void {
+  offscreenCanvasPool.push(canvas);
+}
+
 export function buildSpriteTimeline(_animation: Animation, sprite: Animation['sprite'][0]): SpriteTimeline {
   const layers = new Map<number, {
     resource: number;
@@ -118,15 +148,40 @@ export function renderFrame(
         : animation.sprite[layer.resource];
       if (!childSprite) continue;
 
+      const childSpriteIndex = layer.resource === animation.sprite.length ? -1 : layer.resource;
       const childFrame = ((actualFrame - layer.firstFrame) + layer.preloadFrame) % childSprite.frame.length;
+      const adjustedFrame = childFrame < 0 ? childFrame + childSprite.frame.length : childFrame;
 
-      renderFrame(
-        ctx, animation, textures, spriteTimelines,
-        layer.resource === animation.sprite.length ? -1 : layer.resource,
-        childFrame < 0 ? childFrame + childSprite.frame.length : childFrame,
-        worldMatrix, worldColor,
-        imageFilter, spriteFilter,
-      );
+      if (layer.additive) {
+        // Render the child sprite into an isolated offscreen canvas, then
+        // composite the result additively onto the main canvas.  This correctly
+        // implements Flash's "additive movie-clip" blend mode where the entire
+        // sprite contents are first composited together and then added to the
+        // background (rather than each individual child layer being additive).
+        const offCanvas = acquireOffscreenCanvas(ctx.canvas.width, ctx.canvas.height);
+        const offCtx = offCanvas.getContext('2d');
+        if (!offCtx) { releaseOffscreenCanvas(offCanvas); continue; }
+        offCtx.clearRect(0, 0, offCanvas.width, offCanvas.height);
+        renderFrame(
+          offCtx, animation, textures, spriteTimelines,
+          childSpriteIndex, adjustedFrame,
+          worldMatrix, worldColor,
+          imageFilter, spriteFilter,
+        );
+        ctx.save();
+        ctx.globalCompositeOperation = 'lighter';
+        ctx.setTransform(1, 0, 0, 1, 0, 0);
+        ctx.drawImage(offCanvas, 0, 0);
+        ctx.restore();
+        releaseOffscreenCanvas(offCanvas);
+      } else {
+        renderFrame(
+          ctx, animation, textures, spriteTimelines,
+          childSpriteIndex, adjustedFrame,
+          worldMatrix, worldColor,
+          imageFilter, spriteFilter,
+        );
+      }
     } else {
       if (layer.resource < imageFilter.length && !imageFilter[layer.resource]) continue;
 
@@ -149,6 +204,13 @@ export function renderFrame(
       ctx.globalAlpha = worldColor.a;
       if (layer.additive) {
         ctx.globalCompositeOperation = 'lighter';
+      }
+      // Apply RGB colour-multiplier channels.  Canvas has no built-in API for
+      // per-channel multiply so we use an inline SVG feColorMatrix filter.
+      // The alpha column is kept at identity (0 0 0 1 0) because globalAlpha
+      // already handles the alpha multiplier above.
+      if (worldColor.r !== 1 || worldColor.g !== 1 || worldColor.b !== 1) {
+        ctx.filter = buildColorFilter(worldColor.r, worldColor.g, worldColor.b);
       }
 
       const w = imageDef.size ? imageDef.size.width : texture.naturalWidth;
