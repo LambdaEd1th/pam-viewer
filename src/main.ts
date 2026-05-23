@@ -124,6 +124,8 @@ let panY = 0;
 function getDefaultZoom(): number {
   const dpr = window.devicePixelRatio || 1;
   const effectiveCanvasHeight = canvas.height || stageContainer.getBoundingClientRect().height * dpr;
+  // Use the requested default view: scale a 1536px-tall reference stage to 2/3
+  // of the available canvas height, capped at 100%.
   return Math.min((effectiveCanvasHeight / 1536) * (2 / 3), 1);
 }
 
@@ -771,8 +773,12 @@ canvas.addEventListener('wheel', (e) => {
   zoom = Math.max(0.05, Math.min(100, zoom * factor));
   if (zoom !== oldZoom) {
     // Keep the same animation-space point under the cursor after zooming.
-    panX = (mouseX - canvas.width / 2 - (ax - animation.size[0] / 2) * zoom) / dpr;
-    panY = (mouseY - canvas.height / 2 - (ay - animation.size[1] / 2) * zoom) / dpr;
+    const canvasCenterX = canvas.width / 2;
+    const canvasCenterY = canvas.height / 2;
+    const stageCenterX = animation.size[0] / 2;
+    const stageCenterY = animation.size[1] / 2;
+    panX = (mouseX - canvasCenterX - (ax - stageCenterX) * zoom) / dpr;
+    panY = (mouseY - canvasCenterY - (ay - stageCenterY) * zoom) / dpr;
   }
 
   updateZoomDisplay();
@@ -1306,10 +1312,10 @@ function drawCurrentFrame(): void {
   const cx = canvas.width / 2 + panX * dpr;
   const cy = canvas.height / 2 + panY * dpr;
   const s = zoom;
-  const centerX = animation.size[0] / 2 - animation.position[0];
-  const centerY = animation.size[1] / 2 - animation.position[1];
+  const centerOffsetX = animation.size[0] / 2 - animation.position[0];
+  const centerOffsetY = animation.size[1] / 2 - animation.position[1];
 
-  const baseMatrix: [number, number, number, number, number, number] = [s, 0, 0, s, cx - centerX * s, cy - centerY * s];
+  const baseMatrix: [number, number, number, number, number, number] = [s, 0, 0, s, cx - centerOffsetX * s, cy - centerOffsetY * s];
   const baseColor = { r: 1, g: 1, b: 1, a: 1 };
 
   renderFrame(
@@ -1322,7 +1328,7 @@ function drawCurrentFrame(): void {
   if (boundaryCheck.checked) {
     const bw = animation.size[0];
     const bh = animation.size[1];
-    ctx.setTransform(s, 0, 0, s, cx - centerX * s, cy - centerY * s);
+    ctx.setTransform(s, 0, 0, s, cx - centerOffsetX * s, cy - centerOffsetY * s);
     ctx.strokeStyle = 'rgba(0, 200, 255, 0.5)';
     ctx.lineWidth = 1 / s;
     ctx.strokeRect(-animation.position[0], -animation.position[1], bw, bh);
