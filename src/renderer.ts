@@ -209,6 +209,7 @@ export function renderFrame(
           childSpriteIndex, adjustedFrame,
           worldMatrix, shapeColor,
           imageFilter, spriteFilter,
+          true,   // _noIsolate: avoid redundant isolation for the shape pass
         );
         ctx.save();
         ctx.globalCompositeOperation = 'destination-out';
