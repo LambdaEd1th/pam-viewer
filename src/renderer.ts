@@ -111,6 +111,21 @@ export function buildSpriteTimeline(_animation: Animation, sprite: Animation['sp
   return timeline;
 }
 
+// Returns true if any sprite layer in this snapshot will be rendered as an
+// erase mask (Flash "Erase" blend mode).  A sprite is treated as an erase
+// mask when all three RGB channels of its effective world colour are zero
+// while the alpha channel is non-zero — this is the PAM-format encoding of
+// a Flash clip that uses the Erase blend mode to punch transparent holes
+// through the layers below it.
+function snapshotHasEraseLayers(snapshot: LayerSnapshot[], parentColor: Color): boolean {
+  for (const layer of snapshot) {
+    if (!layer.isSprite) continue;
+    const wc = multiplyColor(parentColor, layer.color);
+    if (wc.r === 0 && wc.g === 0 && wc.b === 0 && wc.a > 0) return true;
+  }
+  return false;
+}
+
 export function renderFrame(
   ctx: CanvasRenderingContext2D,
   animation: Animation,
@@ -122,6 +137,7 @@ export function renderFrame(
   parentColor: Color,
   imageFilter: boolean[],
   spriteFilter: boolean[],
+  _noIsolate = false,
 ): void {
   const timelineKey = spriteIndex === -1 ? 'main' : spriteIndex;
   const timeline = spriteTimelines[timelineKey];
@@ -135,6 +151,30 @@ export function renderFrame(
   const actualFrame = frameIndex % sprite.frame.length;
   const snapshot = timeline[actualFrame];
   if (!snapshot) return;
+
+  // If this sprite contains any erase-mode sub-sprites it must be composited
+  // through an isolated off-screen canvas.  Without isolation the destination-out
+  // operation used for erase layers would remove pixels from the main canvas
+  // (including content drawn by sibling layers that precede this sprite).
+  if (!_noIsolate && snapshotHasEraseLayers(snapshot, parentColor)) {
+    const offCanvas = acquireOffscreenCanvas(ctx.canvas.width, ctx.canvas.height);
+    const offCtx = offCanvas.getContext('2d');
+    if (!offCtx) { releaseOffscreenCanvas(offCanvas); return; }
+    offCtx.clearRect(0, 0, offCanvas.width, offCanvas.height);
+    renderFrame(
+      offCtx, animation, textures, spriteTimelines,
+      spriteIndex, frameIndex,
+      parentMatrix, parentColor,
+      imageFilter, spriteFilter,
+      true,   // _noIsolate: skip isolation in the recursive call
+    );
+    ctx.save();
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.drawImage(offCanvas, 0, 0);
+    ctx.restore();
+    releaseOffscreenCanvas(offCanvas);
+    return;
+  }
 
   for (const layer of snapshot) {
     const worldMatrix = multiplyMatrix(parentMatrix, layer.transform);
@@ -152,7 +192,31 @@ export function renderFrame(
       const childFrame = ((actualFrame - layer.firstFrame) + layer.preloadFrame) % childSprite.frame.length;
       const adjustedFrame = childFrame < 0 ? childFrame + childSprite.frame.length : childFrame;
 
-      if (layer.additive) {
+      // Erase-mode: all RGB channels zero, non-zero alpha.  Render the sprite
+      // shape into an off-screen canvas and apply it with destination-out so
+      // that it punches a transparent hole through the layers already drawn in
+      // the current (isolated) canvas, replicating Flash's Erase blend mode.
+      if (worldColor.r === 0 && worldColor.g === 0 && worldColor.b === 0 && worldColor.a > 0) {
+        const offCanvas = acquireOffscreenCanvas(ctx.canvas.width, ctx.canvas.height);
+        const offCtx = offCanvas.getContext('2d');
+        if (!offCtx) { releaseOffscreenCanvas(offCanvas); continue; }
+        offCtx.clearRect(0, 0, offCanvas.width, offCanvas.height);
+        // Render with opaque white so only the shape's alpha channel matters
+        // for the destination-out operation.
+        const shapeColor: Color = { r: 1, g: 1, b: 1, a: worldColor.a };
+        renderFrame(
+          offCtx, animation, textures, spriteTimelines,
+          childSpriteIndex, adjustedFrame,
+          worldMatrix, shapeColor,
+          imageFilter, spriteFilter,
+        );
+        ctx.save();
+        ctx.globalCompositeOperation = 'destination-out';
+        ctx.setTransform(1, 0, 0, 1, 0, 0);
+        ctx.drawImage(offCanvas, 0, 0);
+        ctx.restore();
+        releaseOffscreenCanvas(offCanvas);
+      } else if (layer.additive) {
         // Render the child sprite into an isolated offscreen canvas, then
         // composite the result additively onto the main canvas.  This correctly
         // implements Flash's "additive movie-clip" blend mode where the entire
