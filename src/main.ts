@@ -710,6 +710,18 @@ function tick(timestamp: number): void {
       }
     }
     advanced = true;
+
+    // Respect PAM frame stop flag: when the new frame has stop=true,
+    // display it and halt (do not loop, regardless of the loop checkbox).
+    // This is how "locked_idle" and other single-frame terminal animations
+    // are handled by the original game engine.
+    const frameData = activeSprite?.frame[currentFrame];
+    if (frameData?.stop) {
+      updateFrameDisplay();
+      drawCurrentFrame();
+      stop();
+      return;
+    }
   }
   if (advanced) {
     updateFrameDisplay();
