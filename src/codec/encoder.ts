@@ -66,8 +66,8 @@ interface RawImg {
 function writeImage(w: BinaryWriter, img: RawImg, version: number): void {
   w.writeString(img.name);
   if (version >= 4) {
-    w.writeI16(img.size ? img.size[0] : 0);
-    w.writeI16(img.size ? img.size[1] : 0);
+    w.writeU16(img.size ? img.size[0] : 0);
+    w.writeU16(img.size ? img.size[1] : 0);
   }
 
   const t = img.transform;
@@ -76,6 +76,12 @@ function writeImage(w: BinaryWriter, img: RawImg, version: number): void {
     w.writeI16(Math.round(t[1] * 20));
     w.writeI16(Math.round(t[2] * 20));
   } else {
+    // PAM v2+ image transforms are always 6-element matrices [a,b,c,d,tx,ty].
+    // The decoder always produces this shape; validate it here.
+    console.assert(
+      t.length === 6 || t.length === 3 || t.length === 2,
+      `ImageInfo transform: expected 2, 3, or 6 elements, got ${t.length}`
+    );
     if (t.length === 6) {
       w.writeI32(Math.round(t[0] * 1310720));
       w.writeI32(Math.round(t[2] * 1310720));
@@ -266,7 +272,7 @@ function writeFrame(w: BinaryWriter, frame: RawFrameEnc, version: number): void 
   if (hasLabel) w.writeString(frame.label!);
 
   if (hasCommands) {
-    w.writeU8(frame.command!.length);
+    writeCount(w, frame.command!.length);
     for (const [cmd, arg] of frame.command!) {
       w.writeString(cmd);
       w.writeString(arg);
@@ -313,8 +319,8 @@ export function encodePAM(raw: RawPamJson): ArrayBuffer {
   w.writeU32(PAM_MAGIC);
   w.writeI32(version);
   w.writeU8(raw.frame_rate ?? 30);
-  w.writeI16(Math.round(raw.position[0] * 20));
-  w.writeI16(Math.round(raw.position[1] * 20));
+  w.writeU16(Math.round(raw.position[0] * 20));
+  w.writeU16(Math.round(raw.position[1] * 20));
   w.writeU16(Math.round(raw.size[0] * 20));
   w.writeU16(Math.round(raw.size[1] * 20));
 
@@ -331,15 +337,18 @@ export function encodePAM(raw: RawPamJson): ArrayBuffer {
   }
 
   if (version <= 3) {
-    if (raw.main_sprite) {
-      writeSprite(w, raw.main_sprite as unknown as RawSpriteEnc, version);
-    }
+    // v≤3: main sprite is always implicit — must write one.
+    // Use an empty default if raw.main_sprite is null/undefined.
+    const ms = raw.main_sprite || { frame: [] };
+    writeSprite(w, ms as unknown as RawSpriteEnc, version);
   } else {
-    if (raw.main_sprite) {
-      w.writeU8(1);
-      writeSprite(w, raw.main_sprite as unknown as RawSpriteEnc, version);
-    } else {
-      w.writeU8(0);
+    // v>3: has_main_sprite bool precedes the sprite.
+    // Only write the sprite if it has meaningful content.
+    const ms = raw.main_sprite;
+    const hasMain = !!(ms && (ms.frame?.length || ms.name));
+    w.writeU8(hasMain ? 1 : 0);
+    if (hasMain) {
+      writeSprite(w, ms as unknown as RawSpriteEnc, version);
     }
   }
 

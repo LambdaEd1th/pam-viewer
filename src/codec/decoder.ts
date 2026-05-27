@@ -39,8 +39,8 @@ function readImage(r: BinaryReader, version: number): RawDecodedImage {
   const name = r.readString();
   let size: [number, number] | null = null;
   if (version >= 4) {
-    const w = r.readI16();
-    const h = r.readI16();
+    const w = r.readU16();
+    const h = r.readU16();
     size = [w, h];
   }
 
@@ -195,7 +195,7 @@ function readFrame(r: BinaryReader, version: number): RawDecodedFrame {
   if (isStop) frame.stop = true;
 
   if (hasCommands) {
-    const count = r.readU8();
+    const count = readCount(r);
     frame.command = [];
     for (let i = 0; i < count; i++) {
       const cmd = r.readString();
@@ -261,7 +261,7 @@ export function decodePAM(buffer: ArrayBuffer): RawPamJson {
   }
 
   const frame_rate = r.readU8();
-  const position: [number, number] = [r.readI16() / 20.0, r.readI16() / 20.0];
+  const position: [number, number] = [r.readU16() / 20.0, r.readU16() / 20.0];
   const size: [number, number] = [r.readU16() / 20.0, r.readU16() / 20.0];
 
   const imageCount = r.readU16();
