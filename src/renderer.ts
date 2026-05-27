@@ -61,7 +61,7 @@ function releaseOffscreenCanvas(canvas: HTMLCanvasElement): void {
   offscreenCanvasPool.push(canvas);
 }
 
-export function buildSpriteTimeline(_animation: Animation, sprite: Animation['sprite'][0]): SpriteTimeline {
+export function buildSpriteTimeline(animation: Animation, sprite: Animation['sprite'][0]): SpriteTimeline {
   const layers = new Map<number, {
     resource: number;
     isSprite: boolean;
@@ -73,6 +73,8 @@ export function buildSpriteTimeline(_animation: Animation, sprite: Animation['sp
     color: Color;
     removed: boolean;
     changed: boolean;
+    spriteFrameNumber: number | null;
+    sourceRect: [number, number, number, number] | null;
   }>();
   const timeline: SpriteTimeline = [];
 
@@ -96,6 +98,8 @@ export function buildSpriteTimeline(_animation: Animation, sprite: Animation['sp
         color: { ...DEFAULT_COLOR },
         removed: false,
         changed: true,
+        spriteFrameNumber: null,
+        sourceRect: null,
       });
     }
 
@@ -105,6 +109,20 @@ export function buildSpriteTimeline(_animation: Animation, sprite: Animation['sp
       layer.transform = transformToMatrix(action.transform);
       if (action.color) {
         layer.color = action.color;
+      }
+      // spriteFrameNumber: adjust preloadFrame so child shows this frame at `fi`
+      if (action.spriteFrameNumber != null && layer.isSprite) {
+        const childSprite = layer.resource === animation.sprite.length
+          ? animation.mainSprite
+          : animation.sprite[layer.resource];
+        if (childSprite) {
+          const childCount = childSprite.frame.length;
+          const offset = action.spriteFrameNumber - (fi - layer.firstFrame);
+          layer.preloadFrame = ((offset % childCount) + childCount) % childCount;
+        }
+      }
+      if (action.sourceRectangle != null) {
+        layer.sourceRect = [...action.sourceRectangle] as [number, number, number, number];
       }
       layer.changed = true;
     }
@@ -124,6 +142,8 @@ export function buildSpriteTimeline(_animation: Animation, sprite: Animation['sp
         preloadFrame: layer.preloadFrame,
         transform: [...layer.transform] as Matrix6,
         color: { ...layer.color },
+        spriteFrameNumber: layer.spriteFrameNumber,
+        sourceRect: layer.sourceRect ? [...layer.sourceRect] as [number, number, number, number] : null,
       });
     }
     timeline.push(snapshot);
@@ -159,7 +179,13 @@ export function renderFrame(
     : animation.sprite[spriteIndex];
   if (!sprite) return;
 
-  const actualFrame = frameIndex % sprite.frame.length;
+  // workArea: restrict playable frame range [start, start+duration)
+  let effectiveFrameIndex = frameIndex;
+  if (sprite.workArea && sprite.workArea.duration > 0) {
+    const wa = sprite.workArea;
+    effectiveFrameIndex = wa.start + ((frameIndex % wa.duration) + wa.duration) % wa.duration;
+  }
+  const actualFrame = effectiveFrameIndex % sprite.frame.length;
   const snapshot = timeline[actualFrame];
   if (!snapshot) return;
 
@@ -176,7 +202,9 @@ export function renderFrame(
       if (!childSprite) continue;
 
       const childSpriteIndex = layer.resource === animation.sprite.length ? -1 : layer.resource;
-      const childFrame = ((actualFrame - layer.firstFrame) + layer.preloadFrame) % childSprite.frame.length;
+      // timeScale: child sprite playback speed multiplier
+      const scaledDelta = Math.floor((actualFrame - layer.firstFrame) * layer.timeScale);
+      const childFrame = (scaledDelta + layer.preloadFrame) % childSprite.frame.length;
       const adjustedFrame = childFrame < 0 ? childFrame + childSprite.frame.length : childFrame;
 
       if (layer.additive) {
@@ -237,7 +265,13 @@ export function renderFrame(
 
       const w = imageDef.size ? imageDef.size.width : texture.naturalWidth;
       const h = imageDef.size ? imageDef.size.height : texture.naturalHeight;
-      ctx.drawImage(src, 0, 0, w, h);
+
+      if (layer.sourceRect) {
+        const [sx, sy, sw, sh] = layer.sourceRect;
+        ctx.drawImage(src, sx, sy, sw, sh, 0, 0, w, h);
+      } else {
+        ctx.drawImage(src, 0, 0, w, h);
+      }
 
       ctx.restore();
     }

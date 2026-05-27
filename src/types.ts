@@ -147,6 +147,10 @@ export interface LayerSnapshot {
   preloadFrame: number;
   transform: Matrix6;
   color: Color;
+  /** child sprite: jump to this frame (set by Move/sprite_frame_number) */
+  spriteFrameNumber: number | null;
+  /** image: source rectangle for cropping [x, y, w, h] */
+  sourceRect: [number, number, number, number] | null;
 }
 
 export type SpriteTimeline = LayerSnapshot[][];
