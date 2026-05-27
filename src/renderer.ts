@@ -4,50 +4,45 @@ import type { Animation, Color, Matrix6, LayerSnapshot, SpriteTimeline, Timeline
 const DEFAULT_COLOR: Color = { r: 1, g: 1, b: 1, a: 1 };
 const IDENTITY_MATRIX: Matrix6 = [1, 0, 0, 1, 0, 0];
 
-// ── DOM-based SVG colour-matrix filters ──
-// Safari does NOT support ctx.filter = url("data:image/svg+xml,...") — the
-// data: URI is silently ignored.  We instead inject real <filter> elements
-// into a hidden <svg> in the DOM and reference them via url(#filterId),
-// which works reliably in Chrome, Firefox, *and* Safari.
+// ── Per-channel RGB colour multiplier ──
+// Safari does NOT support ctx.filter with url(#svgFilter) references in
+// Canvas 2D (even with DOM-based SVGs).  Instead we pre-colourise textures
+// via getImageData / putImageData and cache the results.  This works in
+// every browser and the per-(texture,colour) cost is paid only once.
 
-let filterSvg: SVGSVGElement | null = null;
-const colorFilterCache = new Map<string, string>();
+const colorizedCache = new Map<string, HTMLCanvasElement>();
 
-function ensureFilterSvg(): SVGSVGElement {
-  if (filterSvg) return filterSvg;
-  let el = document.getElementById('pam-color-filters');
-  if (el) {
-    filterSvg = el as unknown as SVGSVGElement;
-    return filterSvg;
+function getColorizedTexture(
+  texture: HTMLImageElement,
+  texId: string,
+  r: number, g: number, b: number,
+): HTMLCanvasElement | HTMLImageElement {
+  if (r === 1 && g === 1 && b === 1) return texture;
+
+  const key = `${texId}|${r.toFixed(4)}|${g.toFixed(4)}|${b.toFixed(4)}`;
+  const cached = colorizedCache.get(key);
+  if (cached) return cached;
+
+  const w = texture.naturalWidth;
+  const h = texture.naturalHeight;
+  const off = document.createElement('canvas');
+  off.width = w;
+  off.height = h;
+  const octx = off.getContext('2d');
+  if (!octx) return texture;
+
+  octx.drawImage(texture, 0, 0);
+  const imgData = octx.getImageData(0, 0, w, h);
+  const d = imgData.data;
+  for (let i = 0; i < d.length; i += 4) {
+    d[i]     = Math.min(255, Math.round(d[i]     * r));
+    d[i + 1] = Math.min(255, Math.round(d[i + 1] * g));
+    d[i + 2] = Math.min(255, Math.round(d[i + 2] * b));
+    // d[i + 3] α is kept as-is — globalAlpha handles opacity separately
   }
-  const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-  svg.setAttribute('id', 'pam-color-filters');
-  svg.setAttribute('width', '0');
-  svg.setAttribute('height', '0');
-  svg.setAttribute('style', 'position:fixed;top:0;left:0;pointer-events:none;visibility:hidden;');
-  document.body.appendChild(svg);
-  filterSvg = svg as unknown as SVGSVGElement;
-  return filterSvg;
-}
-
-function buildColorFilter(r: number, g: number, b: number): string {
-  const key = `${r.toFixed(4)},${g.toFixed(4)},${b.toFixed(4)}`;
-  let filterId = colorFilterCache.get(key);
-  if (filterId === undefined) {
-    const svg = ensureFilterSvg();
-    // Use a hash of the RGB key as a short, stable id
-    filterId = `pam-cm-${colorFilterCache.size}`;
-    const ns = 'http://www.w3.org/2000/svg';
-    const filterEl = document.createElementNS(ns, 'filter');
-    filterEl.setAttribute('id', filterId);
-    const cm = document.createElementNS(ns, 'feColorMatrix');
-    cm.setAttribute('type', 'matrix');
-    cm.setAttribute('values', `${r} 0 0 0 0  0 ${g} 0 0 0  0 0 ${b} 0 0  0 0 0 1 0`);
-    filterEl.appendChild(cm);
-    svg.appendChild(filterEl);
-    colorFilterCache.set(key, `url(#${filterId})`);
-  }
-  return colorFilterCache.get(key)!;
+  octx.putImageData(imgData, 0, 0);
+  colorizedCache.set(key, off);
+  return off;
 }
 
 // Pool of reusable offscreen canvases for additive sprite compositing.
@@ -237,17 +232,12 @@ export function renderFrame(
       if (layer.additive) {
         ctx.globalCompositeOperation = 'lighter';
       }
-      // Apply RGB colour-multiplier channels.  Canvas has no built-in API for
-      // per-channel multiply so we use an inline SVG feColorMatrix filter.
-      // The alpha column is kept at identity (0 0 0 1 0) because globalAlpha
-      // already handles the alpha multiplier above.
-      if (worldColor.r !== 1 || worldColor.g !== 1 || worldColor.b !== 1) {
-        ctx.filter = buildColorFilter(worldColor.r, worldColor.g, worldColor.b);
-      }
+
+      const src = getColorizedTexture(texture, imageDef.name, worldColor.r, worldColor.g, worldColor.b);
 
       const w = imageDef.size ? imageDef.size.width : texture.naturalWidth;
       const h = imageDef.size ? imageDef.size.height : texture.naturalHeight;
-      ctx.drawImage(texture, 0, 0, w, h);
+      ctx.drawImage(src, 0, 0, w, h);
 
       ctx.restore();
     }
