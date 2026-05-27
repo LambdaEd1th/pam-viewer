@@ -4,18 +4,50 @@ import type { Animation, Color, Matrix6, LayerSnapshot, SpriteTimeline, Timeline
 const DEFAULT_COLOR: Color = { r: 1, g: 1, b: 1, a: 1 };
 const IDENTITY_MATRIX: Matrix6 = [1, 0, 0, 1, 0, 0];
 
-// Cache for SVG colour-matrix filter strings keyed by rounded RGB values
+// ── DOM-based SVG colour-matrix filters ──
+// Safari does NOT support ctx.filter = url("data:image/svg+xml,...") — the
+// data: URI is silently ignored.  We instead inject real <filter> elements
+// into a hidden <svg> in the DOM and reference them via url(#filterId),
+// which works reliably in Chrome, Firefox, *and* Safari.
+
+let filterSvg: SVGSVGElement | null = null;
 const colorFilterCache = new Map<string, string>();
+
+function ensureFilterSvg(): SVGSVGElement {
+  if (filterSvg) return filterSvg;
+  let el = document.getElementById('pam-color-filters');
+  if (el) {
+    filterSvg = el as unknown as SVGSVGElement;
+    return filterSvg;
+  }
+  const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+  svg.setAttribute('id', 'pam-color-filters');
+  svg.setAttribute('width', '0');
+  svg.setAttribute('height', '0');
+  svg.setAttribute('style', 'position:fixed;top:0;left:0;pointer-events:none;visibility:hidden;');
+  document.body.appendChild(svg);
+  filterSvg = svg as unknown as SVGSVGElement;
+  return filterSvg;
+}
 
 function buildColorFilter(r: number, g: number, b: number): string {
   const key = `${r.toFixed(4)},${g.toFixed(4)},${b.toFixed(4)}`;
-  let filter = colorFilterCache.get(key);
-  if (filter === undefined) {
-    const svg = `<svg xmlns="http://www.w3.org/2000/svg"><filter id="cm"><feColorMatrix type="matrix" values="${r} 0 0 0 0 0 ${g} 0 0 0 0 0 ${b} 0 0 0 0 0 1 0"/></filter></svg>`;
-    filter = `url("data:image/svg+xml,${encodeURIComponent(svg)}#cm")`;
-    colorFilterCache.set(key, filter);
+  let filterId = colorFilterCache.get(key);
+  if (filterId === undefined) {
+    const svg = ensureFilterSvg();
+    // Use a hash of the RGB key as a short, stable id
+    filterId = `pam-cm-${colorFilterCache.size}`;
+    const ns = 'http://www.w3.org/2000/svg';
+    const filterEl = document.createElementNS(ns, 'filter');
+    filterEl.setAttribute('id', filterId);
+    const cm = document.createElementNS(ns, 'feColorMatrix');
+    cm.setAttribute('type', 'matrix');
+    cm.setAttribute('values', `${r} 0 0 0 0  0 ${g} 0 0 0  0 0 ${b} 0 0  0 0 0 1 0`);
+    filterEl.appendChild(cm);
+    svg.appendChild(filterEl);
+    colorFilterCache.set(key, `url(#${filterId})`);
   }
-  return filter;
+  return colorFilterCache.get(key)!;
 }
 
 // Pool of reusable offscreen canvases for additive sprite compositing.
