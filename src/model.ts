@@ -115,14 +115,21 @@ export function parseAnimation(json: any): Animation {
 
 export function parseSpriteFrameLabels(sprite: Sprite): FrameLabel[] {
   const labels: FrameLabel[] = [];
+  // Pending labels waiting for a stop frame to close them
+  const pending: { name: string; begin: number }[] = [];
   for (let i = 0; i < sprite.frame.length; i++) {
     const f = sprite.frame[i];
     if (f.label != null) {
-      if (labels.length > 0) {
-        labels[labels.length - 1].end = i - 1;
+      pending.push({ name: f.label, begin: i });
+    }
+    // stop 帧 = 标签段终止符：关闭所有待定的标签，end 包含 stop 帧本身
+    if (f.stop) {
+      for (const item of pending) {
+        labels.push({ name: item.name, begin: item.begin, end: i });
       }
-      labels.push({ name: f.label, begin: i, end: sprite.frame.length - 1 });
+      pending.length = 0;
     }
   }
+  // 没有对应 stop 的孤儿标签不输出（与 Twinning 行为一致）
   return labels;
 }
