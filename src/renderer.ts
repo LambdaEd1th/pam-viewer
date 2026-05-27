@@ -179,13 +179,7 @@ export function renderFrame(
     : animation.sprite[spriteIndex];
   if (!sprite) return;
 
-  // workArea: restrict playable frame range [start, start+duration)
-  let effectiveFrameIndex = frameIndex;
-  if (sprite.workArea && sprite.workArea.duration > 0) {
-    const wa = sprite.workArea;
-    effectiveFrameIndex = wa.start + ((frameIndex % wa.duration) + wa.duration) % wa.duration;
-  }
-  const actualFrame = effectiveFrameIndex % sprite.frame.length;
+  const actualFrame = frameIndex % sprite.frame.length;
   const snapshot = timeline[actualFrame];
   if (!snapshot) return;
 
