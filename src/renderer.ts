@@ -282,3 +282,54 @@ export function buildAllTimelines(animation: Animation): TimelinesMap {
   }
   return timelines;
 }
+
+/** Walk every frame of every sprite and compute the axis-aligned bounding box
+ *  of all visible image layers (including nested sprites).  Call this after
+ *  textures are loaded and timelines are built to get the true render extents
+ *  so animation.size / animation.position can be corrected. */
+export function computeAnimationBounds(
+  animation: Animation,
+  textures: Map<string, HTMLImageElement>,
+  timelines: TimelinesMap,
+): { x: number; y: number; width: number; height: number } {
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+
+  const walk = (spriteIndex: number, parentMatrix: Matrix6): void => {
+    const timelineKey: string | number = spriteIndex === -1 ? 'main' : spriteIndex;
+    const timeline = timelines[timelineKey];
+    if (!timeline) return;
+    const sprite = spriteIndex === -1 ? animation.mainSprite! : animation.sprite[spriteIndex];
+    if (!sprite) return;
+
+    for (const snapshot of timeline) {
+      for (const layer of snapshot) {
+        const worldMatrix = multiplyMatrix(parentMatrix, layer.transform);
+        if (layer.isSprite) {
+          const childIdx = layer.resource === animation.sprite.length ? -1 : layer.resource;
+          walk(childIdx, worldMatrix);
+        } else {
+          const imageDef = animation.image[layer.resource];
+          if (!imageDef) continue;
+          const tex = textures.get(imageDef.name);
+          if (!tex) continue;
+          const imgM = transformToMatrix(imageDef.transform);
+          const m = multiplyMatrix(worldMatrix, imgM);
+          const iw = imageDef.size ? imageDef.size.width : tex.naturalWidth;
+          const ih = imageDef.size ? imageDef.size.height : tex.naturalHeight;
+          // transform the four corners
+          for (const [cx, cy] of [[0, 0], [iw, 0], [iw, ih], [0, ih]] as [number, number][]) {
+            const tx = m[0] * cx + m[2] * cy + m[4];
+            const ty = m[1] * cx + m[3] * cy + m[5];
+            if (tx < minX) minX = tx; if (ty < minY) minY = ty;
+            if (tx > maxX) maxX = tx; if (ty > maxY) maxY = ty;
+          }
+        }
+      }
+    }
+  };
+
+  walk(-1, IDENTITY_MATRIX);
+
+  if (!isFinite(minX)) return { x: 0, y: 0, width: 0, height: 0 };
+  return { x: minX, y: minY, width: maxX - minX, height: maxY - minY };
+}

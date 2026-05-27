@@ -1,6 +1,6 @@
 import './style.css';
 import { parseAnimation, parseImageFileName, parseSpriteFrameLabels } from './model';
-import { buildAllTimelines, renderFrame } from './renderer';
+import { buildAllTimelines, computeAnimationBounds, renderFrame } from './renderer';
 import { decodePAM } from './codec/decoder';
 import { encodePAM } from './codec/encoder';
 import { toRawJson } from './codec/serializer';
@@ -401,6 +401,17 @@ async function loadFromFiles(files: File[]): Promise<void> {
   }
 
   spriteTimelines = buildAllTimelines(animation!);
+
+  // Compute the true render bounds and correct the preset size / position
+  {
+    const bounds = computeAnimationBounds(animation!, textures, spriteTimelines);
+    if (bounds.width > 0 && bounds.height > 0) {
+      animation!.position[0] = -bounds.x;
+      animation!.position[1] = -bounds.y;
+      animation!.size[0] = bounds.width;
+      animation!.size[1] = bounds.height;
+    }
+  }
 
   zoom = 1.0;
   panX = 0;
