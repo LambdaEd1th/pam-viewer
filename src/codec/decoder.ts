@@ -86,7 +86,8 @@ function readFrame(r: BinaryReader, version: number): RawDecodedFrame {
     const count = readCount(r);
     for (let i = 0; i < count; i++) {
       const raw = r.readU16();
-      let index = raw & 0x7FF;
+      // Removes have no packed flags — the full u16 is the index.
+      let index = raw;
       if (index === 0x7FF) index = r.readI32();
       remove.push({ index });
     }
