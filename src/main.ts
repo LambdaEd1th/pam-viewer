@@ -9,6 +9,7 @@ import { importFLA, importXFLFromFiles } from './fla/importer';
 import { t, getLang, setLang, onLangChange, getAvailableLangs, getLangLabel } from './i18n';
 import * as jsYamlMod from 'js-yaml';
 import * as smolTomlMod from 'smol-toml';
+import webpEncode, { init as initWebpEncode } from '@jsquash/webp/encode';
 import type { Animation, TimelinesMap } from './types';
 
 // ── Settings persistence ──
@@ -648,7 +649,7 @@ function enableControls(enabled: boolean): void {
   btnNext.disabled = !enabled;
   btnExportPng.disabled = !enabled;
   btnExportApng.disabled = !enabled;
-  btnExportWebp.disabled = !enabled || !webpSupported;
+  btnExportWebp.disabled = !enabled;
   btnExportFla.disabled = !enabled;
   btnConvertJson.disabled = !enabled;
   btnConvertYaml.disabled = !enabled;
@@ -1524,33 +1525,17 @@ btnExportPng.addEventListener('click', () => {
   }, 'image/png');
 });
 
-// ── Detect WebP support ──
-let webpSupported = true;
-function disableWebpExport(): void {
-  webpSupported = false;
-  btnExportWebp.disabled = true;
-  btnExportWebp.title = 'WebP export is not supported on this browser';
-}
-{
-  const tc = document.createElement('canvas');
-  tc.width = 1; tc.height = 1;
-  const du = tc.toDataURL('image/webp');
-  if (!du.startsWith('data:image/webp')) {
-    tc.toBlob((blob) => {
-      if (!blob || blob.type !== 'image/webp') {
-        disableWebpExport();
-      } else {
-        // toBlob claims WebP, verify RIFF/WEBP signature
-        blob.arrayBuffer().then(buf => {
-          const b = new Uint8Array(buf);
-          const isRIFF = b[0]===0x52 && b[1]===0x49 && b[2]===0x46 && b[3]===0x46;
-          const isWEBP = b[8]===0x57 && b[9]===0x45 && b[10]===0x42 && b[11]===0x50;
-          if (!isRIFF || !isWEBP) disableWebpExport();
-        });
-      }
-    }, 'image/webp', 0.9);
+// ── WebP WASM init (async, fire-and-forget) ──
+let webpWasmReady = false;
+(async () => {
+  try {
+    await initWebpEncode();
+    webpWasmReady = true;
+  } catch {
+    btnExportWebp.disabled = true;
+    btnExportWebp.title = 'WebP WASM failed to load';
   }
-}
+})();
 
 // ── Animated WebP encoder ──
 async function extractWebpPayload(blob: Blob): Promise<Uint8Array> {
@@ -1596,11 +1581,15 @@ function writeU16LE(arr: Uint8Array, off: number, val: number): void {
 }
 
 async function encodeAnimatedWebp(canvasFrames: HTMLCanvasElement[], w: number, h: number, fps: number): Promise<Uint8Array> {
+  if (!webpWasmReady) throw new Error('WebP WASM encoder is not ready.');
   const durationMs = Math.round(1000 / fps);
   const framePayloads: Uint8Array[] = [];
   for (const cvs of canvasFrames) {
-    const blob = await new Promise<Blob | null>(r => cvs.toBlob(r, 'image/webp', 0.9));
-    if (!blob || blob.type !== 'image/webp') throw new Error('Current browser does not support canvas WebP export.');
+    const ctx = cvs.getContext('2d');
+    if (!ctx) throw new Error('Canvas context unavailable.');
+    const imgData = ctx.getImageData(0, 0, cvs.width, cvs.height);
+    const webpBuf = await webpEncode(imgData, { quality: 90 });
+    const blob = new Blob([webpBuf], { type: 'image/webp' });
     framePayloads.push(await extractWebpPayload(blob));
   }
 
