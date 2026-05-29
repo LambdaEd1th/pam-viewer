@@ -1,4 +1,5 @@
 import './style.css';
+import { Application } from 'pixi.js';
 import { parseAnimation, parseImageFileName, parseSpriteFrameLabels } from './model';
 import { buildAllTimelines, computeAnimationBounds, renderFrame } from './renderer';
 import { decodePAM } from './codec/decoder';
@@ -7,6 +8,7 @@ import { toRawJson } from './codec/serializer';
 import { exportFLA } from './fla/exporter';
 import { importFLA, importXFLFromFiles } from './fla/importer';
 import { t, getLang, setLang, onLangChange, getAvailableLangs, getLangLabel } from './i18n';
+import { renderFrameToPixiContainer, createBoundaryOverlay, resetPixiRenderer } from './pixi-renderer';
 import * as jsYamlMod from 'js-yaml';
 import * as smolTomlMod from 'smol-toml';
 import webpEncode, { init as initWebpEncode } from '@jsquash/webp/encode';
@@ -69,7 +71,6 @@ const btnToggleSprites = $<HTMLButtonElement>('btn-toggle-sprites');
 const btnZoomReset = $<HTMLButtonElement>('btn-zoom-reset');
 const stageContainer = $<HTMLDivElement>('stage-container');
 const canvas = $<HTMLCanvasElement>('stage');
-const ctx = canvas.getContext('2d')!;
 const statusText = $<HTMLSpanElement>('status-text');
 const coordDisplay = $<HTMLSpanElement>('coord-display');
 const zoomDisplay = $<HTMLSpanElement>('zoom-display');
@@ -104,6 +105,7 @@ const langSelect = $<HTMLSelectElement>('lang-select');
 const dropHint = $<HTMLDivElement>('drop-hint');
 
 // ── State ──
+let pixiApp: Application | null = null;
 let animation: Animation | null = null;
 let textures = new Map<string, HTMLImageElement>();
 let spriteTimelines: TimelinesMap | null = null;
@@ -170,12 +172,15 @@ applyI18n();
 
 // ── Canvas sizing ──
 function resizeCanvas(): void {
+  if (!pixiApp) return;
   const rect = stageContainer.getBoundingClientRect();
   const dpr = window.devicePixelRatio || 1;
-  canvas.width = rect.width * dpr;
-  canvas.height = rect.height * dpr;
-  canvas.style.width = rect.width + 'px';
-  canvas.style.height = rect.height + 'px';
+  const cssW = rect.width;
+  const cssH = rect.height;
+  // Render at physical resolution for pixel-perfect display (no autoDensity)
+  pixiApp.renderer.resize(cssW * dpr, cssH * dpr);
+  canvas.style.width = cssW + 'px';
+  canvas.style.height = cssH + 'px';
   drawCurrentFrame();
 }
 window.addEventListener('resize', resizeCanvas);
@@ -498,8 +503,11 @@ btnClear.addEventListener('click', () => {
   frameDisplay.textContent = '0 / 0';
   statusText.textContent = t('status.hint');
 
-  ctx.setTransform(1, 0, 0, 1, 0, 0);
-  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  // Clear PixiJS stage
+  if (pixiApp) {
+    pixiApp.stage.removeChildren();
+    resetPixiRenderer();
+  }
   dropHint.classList.remove('hidden');
 });
 
@@ -1307,57 +1315,34 @@ btnToggleSprites.addEventListener('click', () => {
 
 // ── Rendering ──
 function drawCurrentFrame(): void {
-  if (!animation || !activeSprite) return;
+  if (!animation || !activeSprite || !pixiApp) return;
 
   const dpr = window.devicePixelRatio || 1;
-  ctx.setTransform(1, 0, 0, 1, 0, 0);
-  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  const cw = canvas.width;
+  const ch = canvas.height;
 
-  const cx = canvas.width / 2 + panX * dpr;
-  const cy = canvas.height / 2 + panY * dpr;
-  const s = zoom;
-  const originX = animation.position[0];
-  const originY = animation.position[1];
+  // Clear the stage
+  pixiApp.stage.removeChildren();
 
-  const baseMatrix: [number, number, number, number, number, number] = [s, 0, 0, s, cx, cy];
-  const baseColor = { r: 1, g: 1, b: 1, a: 1 };
-
-  renderFrame(
-    ctx, animation, textures, spriteTimelines!,
+  // Render the frame content as a PixiJS container
+  const frameContent = renderFrameToPixiContainer(
+    animation, textures, spriteTimelines!,
     activeSpriteIndex, currentFrame,
-    baseMatrix, baseColor,
     imageFilter, spriteFilter,
+    zoom, panX, panY,
+    cw, ch, dpr,
   );
+  if (frameContent) {
+    pixiApp.stage.addChild(frameContent);
+  }
 
+  // Boundary overlay
   if (boundaryCheck.checked) {
-    const bw = animation.size[0];
-    const bh = animation.size[1];
-    ctx.setTransform(s, 0, 0, s, cx, cy);
-    ctx.strokeStyle = 'rgba(0, 200, 255, 0.5)';
-    ctx.lineWidth = 1 / s;
-    ctx.strokeRect(-originX, -originY, bw, bh);
-
-    const handleSize = 5 / s;
-    ctx.fillStyle = 'rgba(0, 200, 255, 0.8)';
-    const bx = -originX, by = -originY;
-    const handles: [number, number][] = [
-      [bx, by], [bx + bw / 2, by], [bx + bw, by],
-      [bx, by + bh / 2], [bx + bw, by + bh / 2],
-      [bx, by + bh], [bx + bw / 2, by + bh], [bx + bw, by + bh],
-    ];
-    for (const [hx, hy] of handles) {
-      ctx.fillRect(hx - handleSize / 2, hy - handleSize / 2, handleSize, handleSize);
-    }
-
-    ctx.setTransform(1, 0, 0, 1, 0, 0);
-    ctx.beginPath();
-    ctx.moveTo(cx - 10, cy);
-    ctx.lineTo(cx + 10, cy);
-    ctx.moveTo(cx, cy - 10);
-    ctx.lineTo(cx, cy + 10);
-    ctx.strokeStyle = 'rgba(255, 100, 100, 0.6)';
-    ctx.lineWidth = 1;
-    ctx.stroke();
+    const boundaryOverlay = createBoundaryOverlay(
+      animation, zoom, panX, panY,
+      cw, ch, dpr,
+    );
+    pixiApp.stage.addChild(boundaryOverlay);
   }
 }
 
@@ -1896,5 +1881,23 @@ document.addEventListener('keydown', (e) => {
 });
 
 // ── Init ──
-loadSettings();
-resizeCanvas();
+async function initApp(): Promise<void> {
+  // Initialize PixiJS Application
+  pixiApp = new Application();
+  await pixiApp.init({
+    canvas,
+    backgroundAlpha: 0,
+    antialias: true,
+    resolution: 1,
+    autoDensity: false,
+    preference: 'webgl',
+  });
+
+  loadSettings();
+  resizeCanvas();
+}
+
+initApp().catch(err => {
+  console.error('Failed to initialize PixiJS:', err);
+  statusText.textContent = 'PixiJS 初始化失败';
+});
