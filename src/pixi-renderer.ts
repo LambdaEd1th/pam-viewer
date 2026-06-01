@@ -3,7 +3,10 @@ import { multiplyColor, multiplyMatrix, transformToMatrix } from './model';
 import type { Animation, Color, Matrix6, TimelinesMap } from './types';
 
 const IDENTITY_MATRIX: Matrix6 = [1, 0, 0, 1, 0, 0];
+const IDENTITY_PIXI_MATRIX = new Matrix(1, 0, 0, 1, 0, 0);
 const WHITE: Color = { r: 1, g: 1, b: 1, a: 1 };
+const MAX_CONTAINER_POOL_SIZE = 4096;
+const MAX_SPRITE_POOL_SIZE = 8192;
 
 let frameRoot: Container | null = null;
 let containerPool: Container[] = [];
@@ -42,6 +45,7 @@ function acquireContainer(): Container {
   container.alpha = 1;
   container.blendMode = 'normal';
   container.eventMode = 'none';
+  container.setFromMatrix(IDENTITY_PIXI_MATRIX);
   return container;
 }
 
@@ -55,6 +59,7 @@ function acquireSprite(): Sprite {
   sprite.width = 1;
   sprite.height = 1;
   sprite.eventMode = 'none';
+  sprite.setFromMatrix(IDENTITY_PIXI_MATRIX);
   return sprite;
 }
 
@@ -66,6 +71,16 @@ function resetFramePoolsUsage(): void {
 function trimUnusedPoolObjects(): void {
   for (let i = containerCursor; i < containerPool.length; i++) {
     containerPool[i].removeChildren();
+  }
+
+  const maxContainerCount = Math.max(containerCursor, MAX_CONTAINER_POOL_SIZE);
+  while (containerPool.length > maxContainerCount) {
+    containerPool.pop()?.destroy();
+  }
+
+  const maxSpriteCount = Math.max(spriteCursor, MAX_SPRITE_POOL_SIZE);
+  while (spritePool.length > maxSpriteCount) {
+    spritePool.pop()?.destroy();
   }
 }
 
@@ -148,9 +163,9 @@ function renderSpriteTree(
       if (!childSpriteData || childSpriteData.frame.length === 0) continue;
 
       const childSpriteIndex = layer.resource === animation.sprite.length ? -1 : layer.resource;
+      const childFrameCount = childSpriteData.frame.length;
       const scaledDelta = Math.floor((actualFrame - layer.firstFrame) * layer.timeScale);
-      const childFrame = (scaledDelta + layer.preloadFrame) % childSpriteData.frame.length;
-      const adjustedFrame = childFrame < 0 ? childFrame + childSpriteData.frame.length : childFrame;
+      const adjustedFrame = ((scaledDelta + layer.preloadFrame) % childFrameCount + childFrameCount) % childFrameCount;
 
       const childContainer = acquireContainer();
       applyMatrix(childContainer, layerMatrix);
@@ -307,6 +322,8 @@ export function resetPixiRenderer(): void {
     frameRoot = null;
   }
 
+  // sourceRect textures share the same source as base image textures,
+  // so keep source alive here and let imageTextures release it below.
   for (const texture of sourceRectTextures.values()) {
     texture.destroy(false);
   }
@@ -323,7 +340,6 @@ export function resetPixiRenderer(): void {
   spritePool = [];
 
   for (const container of containerPool) {
-    container.removeChildren();
     container.destroy();
   }
   containerPool = [];
