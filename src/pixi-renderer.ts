@@ -1,41 +1,209 @@
-import { Container, Sprite, Texture, Graphics } from 'pixi.js';
-import { renderFrame } from './renderer';
-import type { Animation, Matrix6, Color, TimelinesMap } from './types';
+import { Container, Graphics, Matrix, Rectangle, Sprite, Texture } from 'pixi.js';
+import { multiplyColor, multiplyMatrix, transformToMatrix } from './model';
+import type { Animation, Color, Matrix6, TimelinesMap } from './types';
 
-// ── Persistent render-to-texture state ──
-let offscreenCanvas: HTMLCanvasElement | null = null;
-let frameSprite: Sprite | null = null;
-let frameTexture: Texture | null = null;
-let prevCanvasW = 0;
-let prevCanvasH = 0;
+const IDENTITY_MATRIX: Matrix6 = [1, 0, 0, 1, 0, 0];
+const WHITE: Color = { r: 1, g: 1, b: 1, a: 1 };
 
-function ensureOffscreen(canvasW: number, canvasH: number): CanvasRenderingContext2D {
-  if (!offscreenCanvas || canvasW !== prevCanvasW || canvasH !== prevCanvasH) {
-    // Destroy old texture / sprite so we don't leak GPU memory
-    if (frameTexture) {
-      frameTexture.destroy(true);
-      frameTexture = null;
-    }
-    offscreenCanvas = document.createElement('canvas');
-    offscreenCanvas.width = canvasW;
-    offscreenCanvas.height = canvasH;
-    prevCanvasW = canvasW;
-    prevCanvasH = canvasH;
-    frameSprite = null; // will be recreated
-  }
-  const ctx = offscreenCanvas.getContext('2d')!;
-  ctx.clearRect(0, 0, canvasW, canvasH);
-  return ctx;
+let frameRoot: Container | null = null;
+let containerPool: Container[] = [];
+let spritePool: Sprite[] = [];
+let containerCursor = 0;
+let spriteCursor = 0;
+
+const imageTextures = new Map<string, Texture>();
+const sourceRectTextures = new Map<string, Texture>();
+
+function clamp01(value: number): number {
+  if (value <= 0) return 0;
+  if (value >= 1) return 1;
+  return value;
 }
 
-/**
- * Render one animation frame to a persistent offscreen Canvas 2D, then return
- * a PixiJS Container with an up-to-date Sprite.  The offscreen canvas and GPU
- * texture are reused across frames to avoid allocations.
- */
+function rgbToHex(r: number, g: number, b: number): number {
+  const rr = Math.round(clamp01(r) * 255);
+  const gg = Math.round(clamp01(g) * 255);
+  const bb = Math.round(clamp01(b) * 255);
+  return (rr << 16) | (gg << 8) | bb;
+}
+
+function getFrameRoot(): Container {
+  if (!frameRoot) {
+    frameRoot = new Container();
+  }
+  return frameRoot;
+}
+
+function acquireContainer(): Container {
+  const index = containerCursor++;
+  const container = containerPool[index] ?? (containerPool[index] = new Container());
+  container.removeChildren();
+  container.visible = true;
+  container.alpha = 1;
+  container.blendMode = 'normal';
+  container.eventMode = 'none';
+  return container;
+}
+
+function acquireSprite(): Sprite {
+  const index = spriteCursor++;
+  const sprite = spritePool[index] ?? (spritePool[index] = new Sprite(Texture.WHITE));
+  sprite.visible = true;
+  sprite.alpha = 1;
+  sprite.tint = 0xffffff;
+  sprite.blendMode = 'normal';
+  sprite.width = 1;
+  sprite.height = 1;
+  sprite.eventMode = 'none';
+  return sprite;
+}
+
+function resetFramePoolsUsage(): void {
+  containerCursor = 0;
+  spriteCursor = 0;
+}
+
+function trimUnusedPoolObjects(): void {
+  for (let i = containerCursor; i < containerPool.length; i++) {
+    containerPool[i].removeChildren();
+  }
+}
+
+function applyMatrix(displayObject: Container | Sprite, matrix: Matrix6): void {
+  const pixiMatrix = new Matrix(matrix[0], matrix[1], matrix[2], matrix[3], matrix[4], matrix[5]);
+  displayObject.setFromMatrix(pixiMatrix);
+}
+
+function getImageTexture(name: string, image: HTMLImageElement): Texture {
+  const cached = imageTextures.get(name);
+  if (cached) return cached;
+  const texture = Texture.from(image);
+  imageTextures.set(name, texture);
+  return texture;
+}
+
+function getLayerTexture(
+  animation: Animation,
+  imageSource: Map<string, HTMLImageElement>,
+  imageIndex: number,
+  sourceRect: [number, number, number, number] | null,
+): Texture | null {
+  const imageDef = animation.image[imageIndex];
+  if (!imageDef) return null;
+
+  const image = imageSource.get(imageDef.name);
+  if (!image) return null;
+
+  const baseTexture = getImageTexture(imageDef.name, image);
+  if (!sourceRect) return baseTexture;
+
+  const [sx, sy, sw, sh] = sourceRect;
+  if (sw <= 0 || sh <= 0) return null;
+
+  const key = `${imageDef.name}|${sx}|${sy}|${sw}|${sh}`;
+  const cached = sourceRectTextures.get(key);
+  if (cached) return cached;
+
+  const texture = new Texture({
+    source: baseTexture.source,
+    frame: new Rectangle(sx, sy, sw, sh),
+  });
+  sourceRectTextures.set(key, texture);
+  return texture;
+}
+
+function renderSpriteTree(
+  target: Container,
+  animation: Animation,
+  textures: Map<string, HTMLImageElement>,
+  timelines: TimelinesMap,
+  spriteIndex: number,
+  frameIndex: number,
+  parentMatrix: Matrix6,
+  parentColor: Color,
+  imageFilter: boolean[],
+  spriteFilter: boolean[],
+): void {
+  const timelineKey = spriteIndex === -1 ? 'main' : spriteIndex;
+  const timeline = timelines[timelineKey];
+  if (!timeline) return;
+
+  const spriteData = spriteIndex === -1 ? animation.mainSprite : animation.sprite[spriteIndex];
+  if (!spriteData || spriteData.frame.length === 0) return;
+
+  const actualFrame = frameIndex % spriteData.frame.length;
+  const snapshot = timeline[actualFrame];
+  if (!snapshot) return;
+
+  for (const layer of snapshot) {
+    const layerMatrix = multiplyMatrix(parentMatrix, layer.transform);
+    const layerColor = multiplyColor(parentColor, layer.color);
+
+    if (layer.isSprite) {
+      if (layer.resource < spriteFilter.length && !spriteFilter[layer.resource]) continue;
+
+      const childSpriteData = layer.resource === animation.sprite.length
+        ? animation.mainSprite
+        : animation.sprite[layer.resource];
+      if (!childSpriteData || childSpriteData.frame.length === 0) continue;
+
+      const childSpriteIndex = layer.resource === animation.sprite.length ? -1 : layer.resource;
+      const scaledDelta = Math.floor((actualFrame - layer.firstFrame) * layer.timeScale);
+      const childFrame = (scaledDelta + layer.preloadFrame) % childSpriteData.frame.length;
+      const adjustedFrame = childFrame < 0 ? childFrame + childSpriteData.frame.length : childFrame;
+
+      const childContainer = acquireContainer();
+      applyMatrix(childContainer, layerMatrix);
+      childContainer.alpha = clamp01(layerColor.a);
+      childContainer.blendMode = layer.additive ? 'add' : 'normal';
+      target.addChild(childContainer);
+
+      renderSpriteTree(
+        childContainer,
+        animation,
+        textures,
+        timelines,
+        childSpriteIndex,
+        adjustedFrame,
+        IDENTITY_MATRIX,
+        layerColor,
+        imageFilter,
+        spriteFilter,
+      );
+
+      continue;
+    }
+
+    if (layer.resource < imageFilter.length && !imageFilter[layer.resource]) continue;
+
+    const imageDef = animation.image[layer.resource];
+    if (!imageDef) continue;
+
+    const texture = getLayerTexture(animation, textures, layer.resource, layer.sourceRect);
+    if (!texture) continue;
+
+    const imgMatrix = transformToMatrix(imageDef.transform);
+    const finalMatrix = multiplyMatrix(layerMatrix, imgMatrix);
+
+    const drawW = imageDef.size?.width ?? texture.orig.width;
+    const drawH = imageDef.size?.height ?? texture.orig.height;
+    if (drawW <= 0 || drawH <= 0) continue;
+
+    const imageSprite = acquireSprite();
+    imageSprite.texture = texture;
+    imageSprite.width = drawW;
+    imageSprite.height = drawH;
+    imageSprite.alpha = clamp01(layerColor.a);
+    imageSprite.tint = rgbToHex(layerColor.r, layerColor.g, layerColor.b);
+    imageSprite.blendMode = layer.additive ? 'add' : 'normal';
+    applyMatrix(imageSprite, finalMatrix);
+    target.addChild(imageSprite);
+  }
+}
+
 export function renderFrameToPixiContainer(
   animation: Animation,
-  imageTextures: Map<string, HTMLImageElement>,
+  textures: Map<string, HTMLImageElement>,
   timelines: TimelinesMap,
   spriteIndex: number,
   frameIndex: number,
@@ -48,44 +216,31 @@ export function renderFrameToPixiContainer(
   canvasH: number,
   dpr: number,
 ): Container {
-  const ctx = ensureOffscreen(canvasW, canvasH);
+  const root = getFrameRoot();
+  root.removeChildren();
+  resetFramePoolsUsage();
 
   const sx = zoom;
   const sy = zoom;
   const cx = canvasW / 2 + panX * dpr;
   const cy = canvasH / 2 + panY * dpr;
-
   const baseMatrix: Matrix6 = [sx, 0, 0, sy, cx, cy];
-  const baseColor: Color = { r: 1, g: 1, b: 1, a: 1 };
 
-  renderFrame(
-    ctx, animation, imageTextures, timelines,
-    spriteIndex, frameIndex,
-    baseMatrix, baseColor,
-    imageFilter, spriteFilter,
+  renderSpriteTree(
+    root,
+    animation,
+    textures,
+    timelines,
+    spriteIndex,
+    frameIndex,
+    baseMatrix,
+    WHITE,
+    imageFilter,
+    spriteFilter,
   );
 
-  // Create or update the PixiJS texture from the offscreen canvas
-  if (!frameTexture) {
-    frameTexture = Texture.from(offscreenCanvas!);
-  } else {
-    // Tell PixiJS that the canvas source has changed
-    frameTexture.source.update();
-  }
-
-  // Create or reuse the Sprite
-  if (!frameSprite) {
-    frameSprite = new Sprite(frameTexture);
-  } else if (frameSprite.texture !== frameTexture) {
-    frameSprite.texture = frameTexture;
-  }
-
-  // Size the sprite to fill the physical-pixel stage
-  frameSprite.setSize(canvasW, canvasH);
-
-  const container = new Container();
-  container.addChild(frameSprite);
-  return container;
+  trimUnusedPoolObjects();
+  return root;
 }
 
 /**
@@ -147,12 +302,31 @@ export function createBoundaryOverlay(
 
 /** Release all cached GPU / canvas resources. Call when clearing the animation. */
 export function resetPixiRenderer(): void {
-  if (frameTexture) {
-    frameTexture.destroy(true);
-    frameTexture = null;
+  if (frameRoot) {
+    frameRoot.removeChildren();
+    frameRoot = null;
   }
-  frameSprite = null;
-  offscreenCanvas = null;
-  prevCanvasW = 0;
-  prevCanvasH = 0;
+
+  for (const texture of sourceRectTextures.values()) {
+    texture.destroy(false);
+  }
+  sourceRectTextures.clear();
+
+  for (const texture of imageTextures.values()) {
+    texture.destroy(true);
+  }
+  imageTextures.clear();
+
+  for (const sprite of spritePool) {
+    sprite.destroy();
+  }
+  spritePool = [];
+
+  for (const container of containerPool) {
+    container.removeChildren();
+    container.destroy();
+  }
+  containerPool = [];
+
+  resetFramePoolsUsage();
 }
