@@ -1,168 +1,147 @@
-import { transformToMatrix, multiplyMatrix, multiplyColor } from './model';
-import type { Animation, Color, Matrix6, LayerSnapshot, SpriteTimeline, TimelinesMap } from './types';
+import { Container, Graphics, Matrix, Rectangle, Sprite, Texture } from 'pixi.js';
+import { multiplyColor, multiplyMatrix, transformToMatrix } from './model';
+import type { Animation, Color, Matrix6, TimelinesMap } from './types';
 
-const DEFAULT_COLOR: Color = { r: 1, g: 1, b: 1, a: 1 };
 const IDENTITY_MATRIX: Matrix6 = [1, 0, 0, 1, 0, 0];
+const IDENTITY_PIXI_MATRIX = new Matrix(1, 0, 0, 1, 0, 0);
+const WHITE: Color = { r: 1, g: 1, b: 1, a: 1 };
+const MAX_CONTAINER_POOL_SIZE = 4096;
+const MAX_SPRITE_POOL_SIZE = 8192;
 
-// ── Per-channel RGB colour multiplier ──
-// Safari does NOT support ctx.filter with url(#svgFilter) references in
-// Canvas 2D (even with DOM-based SVGs).  Instead we pre-colourise textures
-// via getImageData / putImageData and cache the results.  This works in
-// every browser and the per-(texture,colour) cost is paid only once.
+let frameRoot: Container | null = null;
+let containerPool: Container[] = [];
+let spritePool: Sprite[] = [];
+let containerCursor = 0;
+let spriteCursor = 0;
 
-const colorizedCache = new Map<string, HTMLCanvasElement>();
+const imageTextures = new Map<string, Texture>();
+const sourceRectTextures = new Map<string, Texture>();
 
-function getColorizedTexture(
-  texture: HTMLImageElement,
-  texId: string,
-  r: number, g: number, b: number,
-): HTMLCanvasElement | HTMLImageElement {
-  if (r === 1 && g === 1 && b === 1) return texture;
+function clamp01(value: number): number {
+  if (value <= 0) return 0;
+  if (value >= 1) return 1;
+  return value;
+}
 
-  const key = `${texId}|${r.toFixed(4)}|${g.toFixed(4)}|${b.toFixed(4)}`;
-  const cached = colorizedCache.get(key);
+function rgbToHex(r: number, g: number, b: number): number {
+  const rr = Math.round(clamp01(r) * 255);
+  const gg = Math.round(clamp01(g) * 255);
+  const bb = Math.round(clamp01(b) * 255);
+  return (rr << 16) | (gg << 8) | bb;
+}
+
+function moduloFrameIndex(value: number, count: number): number {
+  // Keep frame index in [0, count) even when playback delta is negative.
+  return ((value % count) + count) % count;
+}
+
+function getFrameRoot(): Container {
+  if (!frameRoot) {
+    frameRoot = new Container();
+  }
+  return frameRoot;
+}
+
+function acquireContainer(): Container {
+  const index = containerCursor++;
+  const container = containerPool[index] ?? (containerPool[index] = new Container());
+  container.removeChildren();
+  container.visible = true;
+  container.alpha = 1;
+  container.blendMode = 'normal';
+  container.eventMode = 'none';
+  container.setFromMatrix(IDENTITY_PIXI_MATRIX);
+  return container;
+}
+
+function acquireSprite(): Sprite {
+  const index = spriteCursor++;
+  const sprite = spritePool[index] ?? (spritePool[index] = new Sprite(Texture.WHITE));
+  sprite.visible = true;
+  sprite.alpha = 1;
+  sprite.tint = 0xffffff;
+  sprite.blendMode = 'normal';
+  sprite.width = 1;
+  sprite.height = 1;
+  sprite.eventMode = 'none';
+  sprite.setFromMatrix(IDENTITY_PIXI_MATRIX);
+  return sprite;
+}
+
+function resetFramePoolsUsage(): void {
+  containerCursor = 0;
+  spriteCursor = 0;
+}
+
+function cleanupUnusedContainerPoolObjects(): void {
+  for (let i = containerCursor; i < containerPool.length; i++) {
+    // Remove previous-frame descendants from pooled containers.
+    containerPool[i].removeChildren();
+  }
+}
+
+function enforcePoolCaps(): void {
+  if (containerPool.length <= MAX_CONTAINER_POOL_SIZE && spritePool.length <= MAX_SPRITE_POOL_SIZE) {
+    return;
+  }
+
+  while (containerPool.length > MAX_CONTAINER_POOL_SIZE) {
+    containerPool.pop()?.destroy();
+  }
+
+  while (spritePool.length > MAX_SPRITE_POOL_SIZE) {
+    spritePool.pop()?.destroy();
+  }
+}
+
+function applyMatrix(displayObject: Container | Sprite, matrix: Matrix6): void {
+  const pixiMatrix = new Matrix(matrix[0], matrix[1], matrix[2], matrix[3], matrix[4], matrix[5]);
+  displayObject.setFromMatrix(pixiMatrix);
+}
+
+function getImageTexture(name: string, image: HTMLImageElement): Texture {
+  const cached = imageTextures.get(name);
+  if (cached) return cached;
+  const texture = Texture.from(image);
+  imageTextures.set(name, texture);
+  return texture;
+}
+
+function getLayerTexture(
+  animation: Animation,
+  imageSource: Map<string, HTMLImageElement>,
+  imageIndex: number,
+  sourceRect: [number, number, number, number] | null,
+): Texture | null {
+  const imageDef = animation.image[imageIndex];
+  if (!imageDef) return null;
+
+  const image = imageSource.get(imageDef.name);
+  if (!image) return null;
+
+  const baseTexture = getImageTexture(imageDef.name, image);
+  if (!sourceRect) return baseTexture;
+
+  const [sx, sy, sw, sh] = sourceRect;
+  if (sw <= 0 || sh <= 0) return null;
+
+  const key = `${imageDef.name}|${sx}|${sy}|${sw}|${sh}`;
+  const cached = sourceRectTextures.get(key);
   if (cached) return cached;
 
-  const w = texture.naturalWidth;
-  const h = texture.naturalHeight;
-  const off = document.createElement('canvas');
-  off.width = w;
-  off.height = h;
-  const octx = off.getContext('2d');
-  if (!octx) return texture;
-
-  octx.drawImage(texture, 0, 0);
-  const imgData = octx.getImageData(0, 0, w, h);
-  const d = imgData.data;
-  for (let i = 0; i < d.length; i += 4) {
-    d[i]     = Math.min(255, Math.round(d[i]     * r));
-    d[i + 1] = Math.min(255, Math.round(d[i + 1] * g));
-    d[i + 2] = Math.min(255, Math.round(d[i + 2] * b));
-    // d[i + 3] α is kept as-is — globalAlpha handles opacity separately
-  }
-  octx.putImageData(imgData, 0, 0);
-  colorizedCache.set(key, off);
-  return off;
+  const texture = new Texture({
+    source: baseTexture.source,
+    frame: new Rectangle(sx, sy, sw, sh),
+  });
+  sourceRectTextures.set(key, texture);
+  return texture;
 }
 
-// Pool of reusable offscreen canvases for additive sprite compositing.
-// A stack-based pool is safe for recursive renderFrame calls: each nested
-// call pops its own distinct canvas, avoiding aliasing between levels.
-const offscreenCanvasPool: HTMLCanvasElement[] = [];
-
-function acquireOffscreenCanvas(w: number, h: number): HTMLCanvasElement {
-  const canvas = offscreenCanvasPool.pop() ?? document.createElement('canvas');
-  canvas.width = w;
-  canvas.height = h;
-  return canvas;
-}
-
-function releaseOffscreenCanvas(canvas: HTMLCanvasElement): void {
-  offscreenCanvasPool.push(canvas);
-}
-
-export function buildSpriteTimeline(animation: Animation, sprite: Animation['sprite'][0]): SpriteTimeline {
-  const layers = new Map<number, {
-    resource: number;
-    isSprite: boolean;
-    additive: boolean;
-    timeScale: number;
-    preloadFrame: number;
-    firstFrame: number;
-    transform: Matrix6;
-    color: Color;
-    removed: boolean;
-    changed: boolean;
-    spriteFrameNumber: number | null;
-    sourceRect: [number, number, number, number] | null;
-  }>();
-  const timeline: SpriteTimeline = [];
-
-  for (let fi = 0; fi < sprite.frame.length; fi++) {
-    const frame = sprite.frame[fi];
-
-    for (const action of frame.remove) {
-      const layer = layers.get(action.index);
-      if (layer) layer.removed = true;
-    }
-
-    for (const action of frame.append) {
-      layers.set(action.index, {
-        resource: action.resource,
-        isSprite: action.sprite,
-        additive: action.additive,
-        timeScale: action.timeScale,
-        preloadFrame: action.preloadFrame,
-        firstFrame: fi,
-        transform: IDENTITY_MATRIX,
-        color: { ...DEFAULT_COLOR },
-        removed: false,
-        changed: true,
-        spriteFrameNumber: null,
-        sourceRect: null,
-      });
-    }
-
-    for (const action of frame.change) {
-      const layer = layers.get(action.index);
-      if (!layer || layer.removed) continue;
-      layer.transform = transformToMatrix(action.transform);
-      if (action.color) {
-        layer.color = action.color;
-      }
-      // spriteFrameNumber: adjust preloadFrame so child shows this frame at `fi`
-      if (action.spriteFrameNumber != null && layer.isSprite) {
-        const childSprite = layer.resource === animation.sprite.length
-          ? animation.mainSprite
-          : animation.sprite[layer.resource];
-        if (childSprite) {
-          const childCount = childSprite.frame.length;
-          const offset = action.spriteFrameNumber - (fi - layer.firstFrame);
-          layer.preloadFrame = ((offset % childCount) + childCount) % childCount;
-        }
-      }
-      if (action.sourceRectangle != null) {
-        layer.sourceRect = [...action.sourceRectangle] as [number, number, number, number];
-      }
-      layer.changed = true;
-    }
-
-    const sortedKeys = [...layers.keys()].sort((a, b) => a - b);
-    const snapshot: LayerSnapshot[] = [];
-    for (const key of sortedKeys) {
-      const layer = layers.get(key)!;
-      if (layer.removed) continue;
-      snapshot.push({
-        index: key,
-        resource: layer.resource,
-        isSprite: layer.isSprite,
-        additive: layer.additive,
-        firstFrame: layer.firstFrame,
-        timeScale: layer.timeScale,
-        preloadFrame: layer.preloadFrame,
-        transform: [...layer.transform] as Matrix6,
-        color: { ...layer.color },
-        spriteFrameNumber: layer.spriteFrameNumber,
-        sourceRect: layer.sourceRect ? [...layer.sourceRect] as [number, number, number, number] : null,
-      });
-    }
-    timeline.push(snapshot);
-
-    for (const layer of layers.values()) {
-      if (!layer.removed) {
-        layer.changed = false;
-      }
-    }
-  }
-
-  return timeline;
-}
-
-export function renderFrame(
-  ctx: CanvasRenderingContext2D,
+function renderSpriteTree(
+  target: Container,
   animation: Animation,
   textures: Map<string, HTMLImageElement>,
-  spriteTimelines: TimelinesMap,
+  timelines: TimelinesMap,
   spriteIndex: number,
   frameIndex: number,
   parentMatrix: Matrix6,
@@ -171,165 +150,210 @@ export function renderFrame(
   spriteFilter: boolean[],
 ): void {
   const timelineKey = spriteIndex === -1 ? 'main' : spriteIndex;
-  const timeline = spriteTimelines[timelineKey];
+  const timeline = timelines[timelineKey];
   if (!timeline) return;
 
-  const sprite = spriteIndex === -1
-    ? animation.mainSprite
-    : animation.sprite[spriteIndex];
-  if (!sprite) return;
+  const spriteData = spriteIndex === -1 ? animation.mainSprite : animation.sprite[spriteIndex];
+  if (!spriteData || spriteData.frame.length === 0) return;
 
-  const actualFrame = frameIndex % sprite.frame.length;
+  const actualFrame = moduloFrameIndex(frameIndex, spriteData.frame.length);
   const snapshot = timeline[actualFrame];
   if (!snapshot) return;
 
   for (const layer of snapshot) {
-    const worldMatrix = multiplyMatrix(parentMatrix, layer.transform);
-    const worldColor = multiplyColor(parentColor, layer.color);
+    const layerMatrix = multiplyMatrix(parentMatrix, layer.transform);
+    const layerColor = multiplyColor(parentColor, layer.color);
 
     if (layer.isSprite) {
       if (layer.resource < spriteFilter.length && !spriteFilter[layer.resource]) continue;
 
-      const childSprite = layer.resource === animation.sprite.length
+      const childSpriteData = layer.resource === animation.sprite.length
         ? animation.mainSprite
         : animation.sprite[layer.resource];
-      if (!childSprite) continue;
+      if (!childSpriteData || childSpriteData.frame.length === 0) continue;
 
       const childSpriteIndex = layer.resource === animation.sprite.length ? -1 : layer.resource;
-      // timeScale: child sprite playback speed multiplier
+      const childFrameCount = childSpriteData.frame.length;
       const scaledDelta = Math.floor((actualFrame - layer.firstFrame) * layer.timeScale);
-      const childFrame = (scaledDelta + layer.preloadFrame) % childSprite.frame.length;
-      const adjustedFrame = childFrame < 0 ? childFrame + childSprite.frame.length : childFrame;
+      const adjustedFrame = moduloFrameIndex(scaledDelta + layer.preloadFrame, childFrameCount);
 
-      if (layer.additive) {
-        // Render the child sprite into an isolated offscreen canvas, then
-        // composite the result additively onto the main canvas.  This correctly
-        // implements Flash's "additive movie-clip" blend mode where the entire
-        // sprite contents are first composited together and then added to the
-        // background (rather than each individual child layer being additive).
-        const offCanvas = acquireOffscreenCanvas(ctx.canvas.width, ctx.canvas.height);
-        const offCtx = offCanvas.getContext('2d');
-        if (!offCtx) { releaseOffscreenCanvas(offCanvas); continue; }
-        offCtx.clearRect(0, 0, offCanvas.width, offCanvas.height);
-        renderFrame(
-          offCtx, animation, textures, spriteTimelines,
-          childSpriteIndex, adjustedFrame,
-          worldMatrix, worldColor,
-          imageFilter, spriteFilter,
-        );
-        ctx.save();
-        ctx.globalCompositeOperation = 'lighter';
-        ctx.setTransform(1, 0, 0, 1, 0, 0);
-        ctx.drawImage(offCanvas, 0, 0);
-        ctx.restore();
-        releaseOffscreenCanvas(offCanvas);
-      } else {
-        renderFrame(
-          ctx, animation, textures, spriteTimelines,
-          childSpriteIndex, adjustedFrame,
-          worldMatrix, worldColor,
-          imageFilter, spriteFilter,
-        );
-      }
-    } else {
-      if (layer.resource < imageFilter.length && !imageFilter[layer.resource]) continue;
+      const childContainer = acquireContainer();
+      applyMatrix(childContainer, layerMatrix);
+      childContainer.alpha = clamp01(layerColor.a);
+      childContainer.blendMode = layer.additive ? 'add' : 'normal';
+      target.addChild(childContainer);
 
-      const imageDef = animation.image[layer.resource];
-      if (!imageDef) continue;
-
-      const texture = textures.get(imageDef.name);
-      if (!texture) continue;
-
-      const imgMatrix = transformToMatrix(imageDef.transform);
-      const finalMatrix = multiplyMatrix(worldMatrix, imgMatrix);
-
-      ctx.save();
-      ctx.setTransform(
-        finalMatrix[0], finalMatrix[1],
-        finalMatrix[2], finalMatrix[3],
-        finalMatrix[4], finalMatrix[5],
+      renderSpriteTree(
+        childContainer,
+        animation,
+        textures,
+        timelines,
+        childSpriteIndex,
+        adjustedFrame,
+        IDENTITY_MATRIX,
+        layerColor,
+        imageFilter,
+        spriteFilter,
       );
 
-      ctx.globalAlpha = worldColor.a;
-      if (layer.additive) {
-        ctx.globalCompositeOperation = 'lighter';
-      }
-
-      const src = getColorizedTexture(texture, imageDef.name, worldColor.r, worldColor.g, worldColor.b);
-
-      const w = imageDef.size ? imageDef.size.width : texture.naturalWidth;
-      const h = imageDef.size ? imageDef.size.height : texture.naturalHeight;
-
-      if (layer.sourceRect) {
-        const [sx, sy, sw, sh] = layer.sourceRect;
-        ctx.drawImage(src, sx, sy, sw, sh, 0, 0, w, h);
-      } else {
-        ctx.drawImage(src, 0, 0, w, h);
-      }
-
-      ctx.restore();
+      continue;
     }
+
+    if (layer.resource < imageFilter.length && !imageFilter[layer.resource]) continue;
+
+    const imageDef = animation.image[layer.resource];
+    if (!imageDef) continue;
+
+    const texture = getLayerTexture(animation, textures, layer.resource, layer.sourceRect);
+    if (!texture) continue;
+
+    const imgMatrix = transformToMatrix(imageDef.transform);
+    const finalMatrix = multiplyMatrix(layerMatrix, imgMatrix);
+
+    const drawW = imageDef.size?.width ?? texture.orig.width;
+    const drawH = imageDef.size?.height ?? texture.orig.height;
+    if (drawW <= 0 || drawH <= 0) continue;
+
+    const imageSprite = acquireSprite();
+    imageSprite.texture = texture;
+    imageSprite.width = drawW;
+    imageSprite.height = drawH;
+    imageSprite.alpha = clamp01(layerColor.a);
+    imageSprite.tint = rgbToHex(layerColor.r, layerColor.g, layerColor.b);
+    imageSprite.blendMode = layer.additive ? 'add' : 'normal';
+    applyMatrix(imageSprite, finalMatrix);
+    target.addChild(imageSprite);
   }
 }
 
-export function buildAllTimelines(animation: Animation): TimelinesMap {
-  const timelines: TimelinesMap = {};
-  for (let i = 0; i < animation.sprite.length; i++) {
-    timelines[i] = buildSpriteTimeline(animation, animation.sprite[i]);
-  }
-  if (animation.mainSprite) {
-    timelines['main'] = buildSpriteTimeline(animation, animation.mainSprite);
-  }
-  return timelines;
-}
-
-/** Walk every frame of every sprite and compute the axis-aligned bounding box
- *  of all visible image layers (including nested sprites).  Call this after
- *  textures are loaded and timelines are built to get the true render extents
- *  so animation.size / animation.position can be corrected. */
-export function computeAnimationBounds(
+export function renderFrameToPixiContainer(
   animation: Animation,
   textures: Map<string, HTMLImageElement>,
   timelines: TimelinesMap,
-): { x: number; y: number; width: number; height: number } {
-  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  spriteIndex: number,
+  frameIndex: number,
+  imageFilter: boolean[],
+  spriteFilter: boolean[],
+  zoom: number,
+  panX: number,
+  panY: number,
+  canvasW: number,
+  canvasH: number,
+  dpr: number,
+): Container {
+  const root = getFrameRoot();
+  root.removeChildren();
+  enforcePoolCaps();
+  resetFramePoolsUsage();
 
-  const walk = (spriteIndex: number, parentMatrix: Matrix6): void => {
-    const timelineKey: string | number = spriteIndex === -1 ? 'main' : spriteIndex;
-    const timeline = timelines[timelineKey];
-    if (!timeline) return;
-    const sprite = spriteIndex === -1 ? animation.mainSprite! : animation.sprite[spriteIndex];
-    if (!sprite) return;
+  const sx = zoom;
+  const sy = zoom;
+  const cx = canvasW / 2 + panX * dpr;
+  const cy = canvasH / 2 + panY * dpr;
+  const baseMatrix: Matrix6 = [sx, 0, 0, sy, cx, cy];
 
-    for (const snapshot of timeline) {
-      for (const layer of snapshot) {
-        const worldMatrix = multiplyMatrix(parentMatrix, layer.transform);
-        if (layer.isSprite) {
-          const childIdx = layer.resource === animation.sprite.length ? -1 : layer.resource;
-          walk(childIdx, worldMatrix);
-        } else {
-          const imageDef = animation.image[layer.resource];
-          if (!imageDef) continue;
-          const tex = textures.get(imageDef.name);
-          if (!tex) continue;
-          const imgM = transformToMatrix(imageDef.transform);
-          const m = multiplyMatrix(worldMatrix, imgM);
-          const iw = imageDef.size ? imageDef.size.width : tex.naturalWidth;
-          const ih = imageDef.size ? imageDef.size.height : tex.naturalHeight;
-          // transform the four corners
-          for (const [cx, cy] of [[0, 0], [iw, 0], [iw, ih], [0, ih]] as [number, number][]) {
-            const tx = m[0] * cx + m[2] * cy + m[4];
-            const ty = m[1] * cx + m[3] * cy + m[5];
-            if (tx < minX) minX = tx; if (ty < minY) minY = ty;
-            if (tx > maxX) maxX = tx; if (ty > maxY) maxY = ty;
-          }
-        }
-      }
-    }
-  };
+  renderSpriteTree(
+    root,
+    animation,
+    textures,
+    timelines,
+    spriteIndex,
+    frameIndex,
+    baseMatrix,
+    WHITE,
+    imageFilter,
+    spriteFilter,
+  );
 
-  walk(-1, IDENTITY_MATRIX);
+  cleanupUnusedContainerPoolObjects();
+  return root;
+}
 
-  if (!isFinite(minX)) return { x: 0, y: 0, width: 0, height: 0 };
-  return { x: minX, y: minY, width: maxX - minX, height: maxY - minY };
+/**
+ * Draw the boundary overlay (blue rectangle + corner handles + center crosshair)
+ * using PixiJS Graphics.
+ */
+export function createBoundaryOverlay(
+  animation: Animation,
+  zoom: number,
+  panX: number,
+  panY: number,
+  canvasW: number,
+  canvasH: number,
+  dpr: number,
+): Container {
+  const overlay = new Container();
+  const g = new Graphics();
+
+  const sx = zoom;
+  const sy = zoom;
+  const cx = canvasW / 2 + panX * dpr;
+  const cy = canvasH / 2 + panY * dpr;
+  const bw = animation.size[0];
+  const bh = animation.size[1];
+  const originX = animation.position[0];
+  const originY = animation.position[1];
+
+  // Blue boundary rectangle
+  g.rect(-originX * sx + cx, -originY * sy + cy, bw * sx, bh * sy);
+  g.stroke({ color: 'rgba(0, 200, 255, 0.5)', width: 1, pixelLine: true });
+
+  // Corner and edge handles
+  const handleSize = 5;
+  const handles: [number, number][] = [
+    [0, 0], [bw / 2, 0], [bw, 0],
+    [0, bh / 2], [bw, bh / 2],
+    [0, bh], [bw / 2, bh], [bw, bh],
+  ];
+  for (const [hx, hy] of handles) {
+    g.rect(
+      -originX * sx + cx + hx * sx - handleSize / 2,
+      -originY * sy + cy + hy * sy - handleSize / 2,
+      handleSize,
+      handleSize,
+    );
+    g.fill({ color: 'rgba(0, 200, 255, 0.8)' });
+  }
+
+  // Center crosshair
+  g.moveTo(cx - 10, cy);
+  g.lineTo(cx + 10, cy);
+  g.moveTo(cx, cy - 10);
+  g.lineTo(cx, cy + 10);
+  g.stroke({ color: 'rgba(255, 100, 100, 0.6)', width: 1, pixelLine: true });
+
+  overlay.addChild(g);
+  return overlay;
+}
+
+/** Release all cached GPU / canvas resources. Call when clearing the animation. */
+export function resetPixiRenderer(): void {
+  if (frameRoot) {
+    frameRoot.removeChildren();
+    frameRoot = null;
+  }
+
+  // sourceRect textures share the same source as base image textures,
+  // so keep source alive here and let imageTextures release it below.
+  for (const texture of sourceRectTextures.values()) {
+    texture.destroy(false); // keep shared source alive
+  }
+  sourceRectTextures.clear();
+
+  for (const texture of imageTextures.values()) {
+    texture.destroy(true);
+  }
+  imageTextures.clear();
+
+  for (const sprite of spritePool) {
+    sprite.destroy();
+  }
+  spritePool = [];
+
+  for (const container of containerPool) {
+    container.destroy();
+  }
+  containerPool = [];
+
+  resetFramePoolsUsage();
 }
