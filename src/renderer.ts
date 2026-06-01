@@ -99,6 +99,24 @@ function applyMatrix(displayObject: Container | Sprite, matrix: Matrix6): void {
   displayObject.setFromMatrix(pixiMatrix);
 }
 
+function applyMatrixWithLocalScale(
+  displayObject: Container | Sprite,
+  matrix: Matrix6,
+  scaleX: number,
+  scaleY: number,
+): void {
+  const scaledMatrix = multiplyMatrix(matrix, [scaleX, 0, 0, scaleY, 0, 0]);
+  const pixiMatrix = new Matrix(
+    scaledMatrix[0],
+    scaledMatrix[1],
+    scaledMatrix[2],
+    scaledMatrix[3],
+    scaledMatrix[4],
+    scaledMatrix[5],
+  );
+  displayObject.setFromMatrix(pixiMatrix);
+}
+
 function getImageTexture(name: string, image: HTMLImageElement): Texture {
   const cached = imageTextures.get(name);
   if (cached) return cached;
@@ -179,7 +197,9 @@ function renderSpriteTree(
 
       const childContainer = acquireContainer();
       applyMatrix(childContainer, layerMatrix);
-      childContainer.alpha = clamp01(layerColor.a);
+      // Keep alpha on leaf sprites only; otherwise parent alpha would be
+      // multiplied again with recursively propagated layerColor.a.
+      childContainer.alpha = 1;
       childContainer.blendMode = layer.additive ? 'add' : 'normal';
       target.addChild(childContainer);
 
@@ -214,14 +234,16 @@ function renderSpriteTree(
     const drawH = imageDef.size?.height ?? texture.orig.height;
     if (drawW <= 0 || drawH <= 0) continue;
 
+    const baseW = texture.orig.width;
+    const baseH = texture.orig.height;
+    if (baseW <= 0 || baseH <= 0) continue;
+
     const imageSprite = acquireSprite();
     imageSprite.texture = texture;
-    imageSprite.width = drawW;
-    imageSprite.height = drawH;
     imageSprite.alpha = clamp01(layerColor.a);
     imageSprite.tint = rgbToHex(layerColor.r, layerColor.g, layerColor.b);
     imageSprite.blendMode = layer.additive ? 'add' : 'normal';
-    applyMatrix(imageSprite, finalMatrix);
+    applyMatrixWithLocalScale(imageSprite, finalMatrix, drawW / baseW, drawH / baseH);
     target.addChild(imageSprite);
   }
 }
