@@ -1,7 +1,7 @@
 import './style.css';
 import { Application, Rectangle } from 'pixi.js';
 import { parseAnimation, parseImageFileName, parseSpriteFrameLabels } from './model';
-import { buildAllTimelines, computeAnimationBounds } from './renderer';
+import { buildAllTimelines, computeAnimationBounds } from './timeline-utils';
 import { decodePAM } from './codec/decoder';
 import { encodePAM } from './codec/encoder';
 import { toRawJson } from './codec/serializer';

@@ -82,7 +82,8 @@ src/
   main.ts           Entry point & UI controller (~1 900 lines)
   types.ts          Shared TypeScript type definitions
   model.ts          Data parsing, matrix math, colour blending
-  renderer.ts       Canvas 2D rendering engine + bounding-box computation
+  pixi-renderer.ts  PixiJS v8 rendering engine
+  timeline-utils.ts Timeline build + bounding-box computation
   i18n.ts           Internationalisation (zh-CN / en)
   style.css         Stylesheet
   codec/
@@ -99,7 +100,7 @@ src/
 - **TypeScript** (strict mode, ES2022 target)
 - **Vite** (dev server + bundler)
 - **js-yaml** / **smol-toml** for alternate format export
-- Zero framework — vanilla Canvas 2D rendering
+- PixiJS v8 rendering
 
 ## Author
 
