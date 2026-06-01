@@ -82,7 +82,7 @@ src/
   main.ts           Entry point & UI controller (~1 900 lines)
   types.ts          Shared TypeScript type definitions
   model.ts          Data parsing, matrix math, colour blending
-  pixi-renderer.ts  PixiJS v8 rendering engine
+  renderer.ts  PixiJS v8 rendering engine
   timeline-utils.ts Timeline build + bounding-box computation
   i18n.ts           Internationalisation (zh-CN / en)
   style.css         Stylesheet

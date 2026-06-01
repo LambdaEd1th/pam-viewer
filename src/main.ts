@@ -8,7 +8,7 @@ import { toRawJson } from './codec/serializer';
 import { exportFLA } from './fla/exporter';
 import { importFLA, importXFLFromFiles } from './fla/importer';
 import { t, getLang, setLang, onLangChange, getAvailableLangs, getLangLabel } from './i18n';
-import { renderFrameToPixiContainer, createBoundaryOverlay, resetPixiRenderer } from './pixi-renderer';
+import { renderFrameToPixiContainer, createBoundaryOverlay, resetPixiRenderer } from './renderer';
 import * as jsYamlMod from 'js-yaml';
 import * as smolTomlMod from 'smol-toml';
 import webpEncode, { init as initWebpEncode } from '@jsquash/webp/encode';
