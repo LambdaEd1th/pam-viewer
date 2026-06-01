@@ -30,6 +30,11 @@ function rgbToHex(r: number, g: number, b: number): number {
   return (rr << 16) | (gg << 8) | bb;
 }
 
+function moduloFrameIndex(value: number, count: number): number {
+  // Keep frame index in [0, count) even when playback delta is negative.
+  return ((value % count) + count) % count;
+}
+
 function getFrameRoot(): Container {
   if (!frameRoot) {
     frameRoot = new Container();
@@ -68,18 +73,23 @@ function resetFramePoolsUsage(): void {
   spriteCursor = 0;
 }
 
-function trimUnusedPoolObjects(): void {
+function cleanupUnusedContainerPoolObjects(): void {
   for (let i = containerCursor; i < containerPool.length; i++) {
+    // Remove previous-frame descendants from pooled containers.
     containerPool[i].removeChildren();
   }
+}
 
-  const maxContainerCount = Math.max(containerCursor, MAX_CONTAINER_POOL_SIZE);
-  while (containerPool.length > maxContainerCount) {
+function enforcePoolCaps(): void {
+  if (containerPool.length <= MAX_CONTAINER_POOL_SIZE && spritePool.length <= MAX_SPRITE_POOL_SIZE) {
+    return;
+  }
+
+  while (containerPool.length > MAX_CONTAINER_POOL_SIZE) {
     containerPool.pop()?.destroy();
   }
 
-  const maxSpriteCount = Math.max(spriteCursor, MAX_SPRITE_POOL_SIZE);
-  while (spritePool.length > maxSpriteCount) {
+  while (spritePool.length > MAX_SPRITE_POOL_SIZE) {
     spritePool.pop()?.destroy();
   }
 }
@@ -146,7 +156,7 @@ function renderSpriteTree(
   const spriteData = spriteIndex === -1 ? animation.mainSprite : animation.sprite[spriteIndex];
   if (!spriteData || spriteData.frame.length === 0) return;
 
-  const actualFrame = frameIndex % spriteData.frame.length;
+  const actualFrame = moduloFrameIndex(frameIndex, spriteData.frame.length);
   const snapshot = timeline[actualFrame];
   if (!snapshot) return;
 
@@ -165,7 +175,7 @@ function renderSpriteTree(
       const childSpriteIndex = layer.resource === animation.sprite.length ? -1 : layer.resource;
       const childFrameCount = childSpriteData.frame.length;
       const scaledDelta = Math.floor((actualFrame - layer.firstFrame) * layer.timeScale);
-      const adjustedFrame = ((scaledDelta + layer.preloadFrame) % childFrameCount + childFrameCount) % childFrameCount;
+      const adjustedFrame = moduloFrameIndex(scaledDelta + layer.preloadFrame, childFrameCount);
 
       const childContainer = acquireContainer();
       applyMatrix(childContainer, layerMatrix);
@@ -233,6 +243,7 @@ export function renderFrameToPixiContainer(
 ): Container {
   const root = getFrameRoot();
   root.removeChildren();
+  enforcePoolCaps();
   resetFramePoolsUsage();
 
   const sx = zoom;
@@ -254,7 +265,7 @@ export function renderFrameToPixiContainer(
     spriteFilter,
   );
 
-  trimUnusedPoolObjects();
+  cleanupUnusedContainerPoolObjects();
   return root;
 }
 
@@ -325,7 +336,7 @@ export function resetPixiRenderer(): void {
   // sourceRect textures share the same source as base image textures,
   // so keep source alive here and let imageTextures release it below.
   for (const texture of sourceRectTextures.values()) {
-    texture.destroy(false);
+    texture.destroy(false); // keep shared source alive
   }
   sourceRectTextures.clear();
 
