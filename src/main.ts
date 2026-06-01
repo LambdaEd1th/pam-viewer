@@ -1,7 +1,7 @@
 import './style.css';
-import { Application } from 'pixi.js';
+import { Application, Rectangle } from 'pixi.js';
 import { parseAnimation, parseImageFileName, parseSpriteFrameLabels } from './model';
-import { buildAllTimelines, computeAnimationBounds, renderFrame } from './renderer';
+import { buildAllTimelines, computeAnimationBounds } from './renderer';
 import { decodePAM } from './codec/decoder';
 import { encodePAM } from './codec/encoder';
 import { toRawJson } from './codec/serializer';
@@ -1431,25 +1431,50 @@ document.addEventListener('click', (e) => {
 // ── Export helpers ──
 let exportCancelled = false;
 
+function isCanvasImageSource(value: unknown): value is CanvasImageSource {
+  if (value instanceof HTMLCanvasElement) return true;
+  if (value instanceof HTMLImageElement) return true;
+  if (value instanceof HTMLVideoElement) return true;
+  if (typeof ImageBitmap !== 'undefined' && value instanceof ImageBitmap) return true;
+  if (typeof OffscreenCanvas !== 'undefined' && value instanceof OffscreenCanvas) return true;
+  return false;
+}
+
 function renderFrameToCanvas(frameIdx: number, w: number, h: number): HTMLCanvasElement {
-  const offCanvas = document.createElement('canvas');
-  offCanvas.width = w;
-  offCanvas.height = h;
-  const offCtx = offCanvas.getContext('2d')!;
-
+  if (!pixiApp) throw new Error('PixiJS app is not initialized.');
   const scale = parseInt(sizeScaleSelect.value) || 1;
-  const ox = animation!.position[0] * scale;
-  const oy = animation!.position[1] * scale;
-  const baseMatrix: [number, number, number, number, number, number] = [scale, 0, 0, scale, ox, oy];
-  const baseColor = { r: 1, g: 1, b: 1, a: 1 };
+  const panExportX = animation!.position[0] * scale - w / 2;
+  const panExportY = animation!.position[1] * scale - h / 2;
 
-  renderFrame(
-    offCtx, animation!, textures, spriteTimelines!,
+  const frameContent = renderFrameToPixiContainer(
+    animation!, textures, spriteTimelines!,
     activeSpriteIndex, frameIdx,
-    baseMatrix, baseColor,
     imageFilter, spriteFilter,
+    scale, panExportX, panExportY,
+    w, h, 1,
   );
-  return offCanvas;
+
+  const extracted = pixiApp.renderer.extract.canvas({
+    target: frameContent,
+    frame: new Rectangle(0, 0, w, h),
+    resolution: 1,
+    clearColor: '#00000000',
+  });
+
+  if (extracted instanceof HTMLCanvasElement) {
+    return extracted;
+  }
+
+  const fallbackCanvas = document.createElement('canvas');
+  fallbackCanvas.width = w;
+  fallbackCanvas.height = h;
+  const fallbackCtx = fallbackCanvas.getContext('2d');
+  if (fallbackCtx && isCanvasImageSource(extracted)) {
+    fallbackCtx.drawImage(extracted, 0, 0, w, h);
+  } else {
+    console.warn('Pixi extract returned non-canvas image source; export frame is blank.');
+  }
+  return fallbackCanvas;
 }
 
 function getExportSize(): { w: number; h: number } {
@@ -1508,6 +1533,7 @@ btnExportPng.addEventListener('click', () => {
   offCanvas.toBlob(blob => {
     if (blob) downloadBlob(blob, getExportName('png'));
   }, 'image/png');
+  drawCurrentFrame();
 });
 
 // ── WebP WASM init (async, fire-and-forget) ──
@@ -1745,7 +1771,7 @@ async function exportAnimCommon(
 
     const canvasFrames: HTMLCanvasElement[] = [];
     for (let i = 0; i < totalFrames; i++) {
-      if (exportCancelled) { hideExportOverlay(); return; }
+      if (exportCancelled) { hideExportOverlay(); drawCurrentFrame(); return; }
       const fi = begin + i;
       canvasFrames.push(renderFrameToCanvas(fi, w, h));
       exportProgress.value = ((i + 1) / totalFrames) * 50;
@@ -1753,7 +1779,7 @@ async function exportAnimCommon(
       if (i % 5 === 4) await new Promise(r => setTimeout(r, 0));
     }
 
-    if (exportCancelled) { hideExportOverlay(); return; }
+    if (exportCancelled) { hideExportOverlay(); drawCurrentFrame(); return; }
     exportStatus.textContent = t('export.encoding', { format: formatLabel });
     exportProgress.value = 50;
     await new Promise(r => setTimeout(r, 0));
@@ -1769,6 +1795,7 @@ async function exportAnimCommon(
     alert(e.message || t('export.failed'));
   }
   hideExportOverlay();
+  drawCurrentFrame();
 }
 
 btnExportApng.addEventListener('click', () =>
