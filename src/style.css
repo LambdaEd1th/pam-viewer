@@ -135,6 +135,87 @@ body {
 #toolbar select { max-width: 200px; }
 #toolbar input[type="number"] { width: 60px; }
 
+/* ── Animation tabs ── */
+.tab-strip {
+  display: flex;
+  align-items: center;
+  min-height: 34px;
+  padding: 4px 8px 0;
+  background: var(--color-surface);
+  border-bottom: 1px solid var(--color-border);
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+.tab-strip.hidden { display: none; }
+
+.animation-tabs {
+  display: flex;
+  align-items: flex-end;
+  gap: 3px;
+  min-width: 0;
+}
+
+.animation-tab {
+  display: flex;
+  align-items: center;
+  max-width: 240px;
+  min-width: 96px;
+  height: 30px;
+  background: var(--color-control);
+  border: 1px solid var(--color-border-strong);
+  border-bottom: none;
+  color: var(--color-text);
+  border-radius: 4px 4px 0 0;
+  font-size: 12px;
+  overflow: hidden;
+}
+.animation-tab:hover {
+  background: var(--color-control-hover);
+}
+.animation-tab.active {
+  background: var(--color-stage);
+  color: var(--color-text-strong);
+  border-color: var(--color-accent-border);
+}
+
+.animation-tab-main {
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  padding: 0 6px 0 10px;
+  border: none;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  font: inherit;
+  text-align: left;
+}
+
+.animation-tab-name {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.animation-tab-close {
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border: none;
+  border-radius: 3px;
+  background: transparent;
+  color: var(--color-text-muted);
+  cursor: pointer;
+  font-size: 14px;
+  line-height: 18px;
+  flex-shrink: 0;
+}
+.animation-tab-close:hover {
+  background: var(--color-border);
+  color: var(--color-text-strong);
+}
+
 /* Size controls */
 .size-label input[type="number"] { width: 50px; }
 .size-label select {

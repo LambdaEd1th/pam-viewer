@@ -17,6 +17,35 @@ import type { Animation, TimelinesMap } from './types';
 // ── Settings persistence ──
 const SETTINGS_KEY = 'pam-viewer-settings';
 type ThemePreference = 'system' | 'light' | 'dark';
+type FrameRange = { begin: number; end: number };
+
+interface LoadedAnimation {
+  displayName: string;
+  animation: Animation;
+  textures: Map<string, HTMLImageElement>;
+  spriteTimelines: TimelinesMap;
+  loaded: number;
+}
+
+interface AnimationTab extends LoadedAnimation {
+  id: number;
+  activeSpriteIndex: number;
+  frameRange: FrameRange;
+  currentFrame: number;
+  zoom: number;
+  panX: number;
+  panY: number;
+  imageFilter: boolean[];
+  spriteFilter: boolean[];
+  plantCustomLayers: number[];
+  zombieStateLayers: number[];
+  groundSwatchLayers: number[];
+  speedValue: string;
+  sizeScale: string;
+  imageRegex: string;
+  spriteRegex: string;
+  labelValue: string;
+}
 
 function readSettings(): Record<string, unknown> | null {
   try {
@@ -87,6 +116,8 @@ const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as 
 const btnLoad = $<HTMLButtonElement>('btn-load');
 const btnClear = $<HTMLButtonElement>('btn-clear');
 const animName = $<HTMLSpanElement>('anim-name');
+const tabStrip = $<HTMLDivElement>('tab-strip');
+const animationTabsEl = $<HTMLDivElement>('animation-tabs');
 const spriteSelect = $<HTMLSelectElement>('sprite-select');
 const labelSelect = $<HTMLSelectElement>('label-select');
 const btnPrev = $<HTMLButtonElement>('btn-prev');
@@ -144,6 +175,9 @@ const themeSelect = $<HTMLSelectElement>('theme-select');
 const dropHint = $<HTMLDivElement>('drop-hint');
 
 // ── State ──
+let tabStates: AnimationTab[] = [];
+let activeTabId: number | null = null;
+let nextTabId = 1;
 let pixiApp: Application | null = null;
 let animation: Animation | null = null;
 let textures = new Map<string, HTMLImageElement>();
@@ -171,6 +205,323 @@ let spriteFilter: boolean[] = [];
 let plantCustomLayers: number[] = [];
 let zombieStateLayers: number[] = [];
 let groundSwatchLayers: number[] = [];
+
+function getActiveTab(): AnimationTab | null {
+  return tabStates.find(tab => tab.id === activeTabId) ?? null;
+}
+
+function getSpriteForAnimation(anim: Animation, index: number): Animation['mainSprite'] {
+  return index === -1 ? anim.mainSprite : (anim.sprite[index] ?? null);
+}
+
+function getInitialFrameRange(sprite: Animation['mainSprite']): FrameRange {
+  if (!sprite || sprite.frame.length === 0) return { begin: 0, end: 0 };
+  return { begin: 0, end: sprite.frame.length - 1 };
+}
+
+function getSpecialLayerIndices(anim: Animation): {
+  plantCustomLayers: number[];
+  zombieStateLayers: number[];
+  groundSwatchLayers: number[];
+} {
+  const result = {
+    plantCustomLayers: [] as number[],
+    zombieStateLayers: [] as number[],
+    groundSwatchLayers: [] as number[],
+  };
+  anim.sprite.forEach((sp, i) => {
+    if (!sp.name) return;
+    if (sp.name.startsWith('custom_')) result.plantCustomLayers.push(i);
+    if (sp.name === 'ink' || sp.name === 'butter') result.zombieStateLayers.push(i);
+    if (sp.name === 'ground_swatch' || sp.name === 'ground_swatch_plane') result.groundSwatchLayers.push(i);
+  });
+  return result;
+}
+
+function createAnimationTab(loadedAnimation: LoadedAnimation): AnimationTab {
+  const initialSpriteIndex = loadedAnimation.animation.mainSprite
+    ? -1
+    : (loadedAnimation.animation.sprite.length > 0 ? 0 : -1);
+  const initialSprite = getSpriteForAnimation(loadedAnimation.animation, initialSpriteIndex);
+  const layerIndices = getSpecialLayerIndices(loadedAnimation.animation);
+  const spriteFilter = loadedAnimation.animation.sprite.map(() => true);
+  for (const idx of [...layerIndices.plantCustomLayers, ...layerIndices.zombieStateLayers]) {
+    spriteFilter[idx] = false;
+  }
+  const frameRange = getInitialFrameRange(initialSprite);
+
+  return {
+    ...loadedAnimation,
+    id: nextTabId++,
+    activeSpriteIndex: initialSpriteIndex,
+    frameRange,
+    currentFrame: reverseCheck.checked ? frameRange.end : frameRange.begin,
+    zoom: 1.0,
+    panX: 0,
+    panY: 0,
+    imageFilter: loadedAnimation.animation.image.map(() => true),
+    spriteFilter,
+    ...layerIndices,
+    speedValue: String((initialSprite as any)?.frameRate ?? loadedAnimation.animation.frameRate),
+    sizeScale: '1',
+    imageRegex: '',
+    spriteRegex: '',
+    labelValue: 'all',
+  };
+}
+
+function saveActiveTabState(): void {
+  const tab = getActiveTab();
+  if (!tab || !animation) return;
+
+  tab.animation = animation;
+  tab.textures = textures;
+  tab.spriteTimelines = spriteTimelines!;
+  tab.activeSpriteIndex = activeSpriteIndex;
+  tab.frameRange = { ...frameRange };
+  tab.currentFrame = currentFrame;
+  tab.zoom = zoom;
+  tab.panX = panX;
+  tab.panY = panY;
+  tab.imageFilter = imageFilter;
+  tab.spriteFilter = spriteFilter;
+  tab.plantCustomLayers = plantCustomLayers;
+  tab.zombieStateLayers = zombieStateLayers;
+  tab.groundSwatchLayers = groundSwatchLayers;
+  tab.speedValue = speedInput.value;
+  tab.sizeScale = sizeScaleSelect.value;
+  tab.imageRegex = imgRegexInput.value;
+  tab.spriteRegex = sprRegexInput.value;
+  tab.labelValue = labelSelect.value || 'all';
+}
+
+function loadTabState(tab: AnimationTab): void {
+  animation = tab.animation;
+  textures = tab.textures;
+  spriteTimelines = tab.spriteTimelines;
+  activeSpriteIndex = tab.activeSpriteIndex;
+  activeSprite = getSpriteForAnimation(tab.animation, tab.activeSpriteIndex);
+  frameLabels = activeSprite ? parseSpriteFrameLabels(activeSprite) : [];
+  frameRange = { ...tab.frameRange };
+  currentFrame = tab.currentFrame;
+  zoom = tab.zoom;
+  panX = tab.panX;
+  panY = tab.panY;
+  imageFilter = tab.imageFilter;
+  spriteFilter = tab.spriteFilter;
+  plantCustomLayers = tab.plantCustomLayers;
+  zombieStateLayers = tab.zombieStateLayers;
+  groundSwatchLayers = tab.groundSwatchLayers;
+}
+
+function renderTabs(): void {
+  tabStrip.classList.toggle('hidden', tabStates.length === 0);
+  animationTabsEl.innerHTML = '';
+  for (const tab of tabStates) {
+    const tabItem = document.createElement('div');
+    tabItem.className = 'animation-tab';
+    tabItem.classList.toggle('active', tab.id === activeTabId);
+
+    const tabButton = document.createElement('button');
+    tabButton.type = 'button';
+    tabButton.className = 'animation-tab-main';
+    tabButton.setAttribute('role', 'tab');
+    tabButton.setAttribute('aria-selected', tab.id === activeTabId ? 'true' : 'false');
+    tabButton.title = t('tab.switch.title', { name: tab.displayName });
+    tabButton.addEventListener('click', () => activateAnimationTab(tab.id));
+
+    const name = document.createElement('span');
+    name.className = 'animation-tab-name';
+    name.textContent = tab.displayName;
+    tabButton.appendChild(name);
+
+    const close = document.createElement('button');
+    close.type = 'button';
+    close.className = 'animation-tab-close';
+    close.textContent = '\u00d7';
+    close.title = t('tab.close.title');
+    close.setAttribute('aria-label', t('tab.close.title'));
+    close.addEventListener('click', ev => {
+      ev.stopPropagation();
+      closeAnimationTab(tab.id);
+    });
+
+    tabItem.appendChild(tabButton);
+    tabItem.appendChild(close);
+    animationTabsEl.appendChild(tabItem);
+  }
+}
+
+function renderEmptyAnimationState(): void {
+  stop();
+  activeTabId = null;
+  animation = null;
+  textures = new Map();
+  spriteTimelines = null;
+  activeSprite = null;
+  activeSpriteIndex = -1;
+  frameLabels = [];
+  frameRange = { begin: 0, end: 0 };
+  currentFrame = 0;
+  imageFilter = [];
+  spriteFilter = [];
+  plantCustomLayers = [];
+  zombieStateLayers = [];
+  groundSwatchLayers = [];
+  zoom = 1.0;
+  panX = 0;
+  panY = 0;
+  updateZoomDisplay();
+  sizeWInput.value = '0';
+  sizeHInput.value = '0';
+  sizeScaleSelect.value = '1';
+  updateSizeDisplay();
+
+  animName.textContent = t('anim.unloaded');
+  spriteSelect.innerHTML = '';
+  spriteSelect.disabled = true;
+  labelSelect.innerHTML = '';
+  labelSelect.disabled = true;
+  imageList.innerHTML = '';
+  spriteList.innerHTML = '';
+  imgRegexInput.value = '';
+  sprRegexInput.value = '';
+  plantLayerSelect.innerHTML = '';
+  plantLayerSelect.disabled = true;
+  zombieStateSelect.innerHTML = '';
+  zombieStateSelect.disabled = true;
+  groundSwatchCheck.checked = false;
+  groundSwatchCheck.disabled = true;
+  enableControls(false);
+  frameSlider.disabled = true;
+  frameSlider.value = '0';
+  frameSlider.max = '0';
+  speedInput.disabled = true;
+  rangeBeginInput.disabled = true;
+  rangeEndInput.disabled = true;
+  btnClear.disabled = true;
+  frameDisplay.textContent = '0 / 0';
+  statusText.textContent = t('status.hint');
+
+  if (pixiApp) {
+    pixiApp.stage.removeChildren();
+    resetPixiRenderer();
+  }
+  dropHint.classList.remove('hidden');
+  renderTabs();
+}
+
+function findLabelValueForRange(): string {
+  if (!activeSprite) return 'all';
+  if (frameRange.begin === 0 && frameRange.end === activeSprite.frame.length - 1) return 'all';
+  const rangeValue = JSON.stringify(frameRange);
+  return Array.from(labelSelect.options).some(opt => opt.value === rangeValue) ? rangeValue : 'all';
+}
+
+function renderActiveTabState(startPlayback = false): void {
+  const tab = getActiveTab();
+  if (!tab || !animation) {
+    renderEmptyAnimationState();
+    return;
+  }
+
+  animName.textContent = tab.displayName;
+  updateZoomDisplay();
+  populateSpriteSelect();
+  spriteSelect.value = activeSpriteIndex === -1 ? 'main' : String(activeSpriteIndex);
+
+  if (activeSprite && activeSprite.frame.length > 0) {
+    frameLabels = parseSpriteFrameLabels(activeSprite);
+    populateLabelSelect();
+    const labelValue = Array.from(labelSelect.options).some(opt => opt.value === tab.labelValue)
+      ? tab.labelValue
+      : findLabelValueForRange();
+    labelSelect.value = labelValue;
+    enableControls(true);
+    speedInput.disabled = false;
+    updateSliderRange();
+    updateRangeInputs();
+    updateFrameDisplay();
+  } else {
+    labelSelect.innerHTML = '';
+    labelSelect.disabled = true;
+    enableControls(false);
+    frameSlider.disabled = true;
+    rangeBeginInput.disabled = true;
+    rangeEndInput.disabled = true;
+    speedInput.disabled = true;
+    frameDisplay.textContent = '0 / 0';
+  }
+
+  speedInput.value = tab.speedValue;
+  sizeWInput.value = String(animation.size[0]);
+  sizeHInput.value = String(animation.size[1]);
+  sizeScaleSelect.value = tab.sizeScale;
+  updateSizeDisplay();
+
+  populateImagePanel();
+  populateSpritePanel();
+  imgRegexInput.value = tab.imageRegex;
+  sprRegexInput.value = tab.spriteRegex;
+  applyRegexFilter(imgRegexInput, imageList);
+  applyRegexFilter(sprRegexInput, spriteList);
+  renderSpecialLayerControls();
+  highlightActiveSpriteInPanel();
+
+  btnClear.disabled = false;
+  statusText.textContent = t('status.loaded', {
+    name: tab.displayName,
+    images: String(animation.image.length),
+    loaded: String(tab.loaded),
+    sprites: String(animation.sprite.length),
+  });
+  dropHint.classList.add('hidden');
+  renderTabs();
+  resizeCanvas();
+  if (startPlayback && activeSprite && autoplayCheck.checked) play();
+}
+
+function activateAnimationTab(tabId: number, startPlayback = false): void {
+  if (activeTabId === tabId) {
+    renderTabs();
+    return;
+  }
+  saveActiveTabState();
+  stop();
+  activeTabId = tabId;
+  const tab = getActiveTab();
+  if (!tab) {
+    renderEmptyAnimationState();
+    return;
+  }
+  loadTabState(tab);
+  renderActiveTabState(startPlayback);
+}
+
+function closeAnimationTab(tabId: number): void {
+  const index = tabStates.findIndex(tab => tab.id === tabId);
+  if (index === -1) return;
+
+  const closingActive = activeTabId === tabId;
+  if (closingActive) saveActiveTabState();
+  const nextActiveId = closingActive
+    ? (tabStates[index + 1]?.id ?? tabStates[index - 1]?.id ?? null)
+    : activeTabId;
+
+  tabStates.splice(index, 1);
+  if (!closingActive) {
+    renderTabs();
+    return;
+  }
+
+  stop();
+  activeTabId = null;
+  if (nextActiveId !== null) {
+    activateAnimationTab(nextActiveId);
+  } else {
+    renderEmptyAnimationState();
+  }
+}
 
 // ── i18n setup ──
 function applyI18n(): void {
@@ -213,7 +564,12 @@ onLangChange(() => {
   applyI18n();
   langSelect.value = getLang();
   themeSelect.value = themePreference;
-  if (animation) populateLabelSelect();
+  if (animation) {
+    saveActiveTabState();
+    renderActiveTabState();
+  } else {
+    renderTabs();
+  }
 });
 applyI18n();
 
@@ -358,21 +714,19 @@ fileInput.addEventListener('change', async () => {
 });
 
 // ── Core loading logic ──
-async function loadFromFiles(files: File[]): Promise<void> {
-  statusText.textContent = t('status.loading');
-  stop();
-
+async function buildLoadedAnimation(files: File[]): Promise<LoadedAnimation | null> {
   const flaFile = files.find(f => /\.fla$/i.test(f.name));
   const hasXfl = !flaFile && files.some(f => /(?:^|[\/])DOMDocument\.xml$/i.test(f.name));
 
   let flaMediaPngs: Map<string, Uint8Array> | null = null;
   let displayName = '';
+  let loadedAnimation: Animation | null = null;
 
   if (flaFile || hasXfl) {
     if (flaFile) {
       const buf = await flaFile.arrayBuffer();
       const result = await importFLA(buf);
-      animation = parseAnimation(result.json);
+      loadedAnimation = parseAnimation(result.json);
       flaMediaPngs = result.mediaPngs;
       displayName = flaFile.name;
     } else {
@@ -382,7 +736,7 @@ async function loadFromFiles(files: File[]): Promise<void> {
         fileMap.set(f.name, new Uint8Array(buf));
       }
       const result = importXFLFromFiles(fileMap);
-      animation = parseAnimation(result.json);
+      loadedAnimation = parseAnimation(result.json);
       flaMediaPngs = result.mediaPngs;
       displayName = files[0]?.name?.split('/')[0] || 'XFL';
     }
@@ -396,23 +750,24 @@ async function loadFromFiles(files: File[]): Promise<void> {
     const pamBinFile = files.find(f => /\.pam$/i.test(f.name) && !/\.json$/i.test(f.name) && !/\.ya?ml$/i.test(f.name) && !/\.toml$/i.test(f.name));
 
     const sourceFile = pamJsonFile || pamYamlFile || pamTomlFile || pamBinFile;
-    if (!sourceFile) { statusText.textContent = t('status.noPam'); return; }
+    if (!sourceFile) return null;
     displayName = sourceFile.name;
 
     if (pamJsonFile) {
       const text = await pamJsonFile.text();
-      animation = parseAnimation(JSON.parse(text));
+      loadedAnimation = parseAnimation(JSON.parse(text));
     } else if (pamYamlFile) {
       const text = await pamYamlFile.text();
-      animation = parseAnimation(jsYamlMod.load(text) as any);
+      loadedAnimation = parseAnimation(jsYamlMod.load(text) as any);
     } else if (pamTomlFile) {
       const text = await pamTomlFile.text();
-      animation = parseAnimation(smolTomlMod.parse(text) as any);
+      loadedAnimation = parseAnimation(smolTomlMod.parse(text) as any);
     } else {
       const buf = await pamBinFile!.arrayBuffer();
-      animation = parseAnimation(decodePAM(buf));
+      loadedAnimation = parseAnimation(decodePAM(buf));
     }
   }
+  if (!loadedAnimation) return null;
 
   // Build PNG name map
   const pngMap = new Map<string, File>();
@@ -421,9 +776,9 @@ async function loadFromFiles(files: File[]): Promise<void> {
   }
 
   // Load textures
-  textures = new Map();
+  const loadedTextures = new Map<string, HTMLImageElement>();
   let loaded = 0;
-  for (const img of animation!.image) {
+  for (const img of loadedAnimation.image) {
     const baseName = parseImageFileName(img.name);
     const pipeIdx = img.name.indexOf('|');
     const altName = pipeIdx !== -1 ? img.name.substring(pipeIdx + 1) : null;
@@ -434,128 +789,70 @@ async function loadFromFiles(files: File[]): Promise<void> {
         if (pngData) {
           try {
             const blob = new Blob([pngData as BlobPart], { type: 'image/png' });
-            textures.set(img.name, await blobToImage(blob));
+            loadedTextures.set(img.name, await blobToImage(blob));
             loaded++;
           } catch { /* skip */ }
           break;
         }
       }
-      if (textures.has(img.name)) continue;
+      if (loadedTextures.has(img.name)) continue;
     }
 
     for (const name of [baseName, altName].filter(Boolean) as string[]) {
       const pngFile = pngMap.get((name + '.png').toUpperCase());
       if (pngFile) {
-        try { textures.set(img.name, await blobToImage(pngFile)); loaded++; }
+        try { loadedTextures.set(img.name, await blobToImage(pngFile)); loaded++; }
         catch { /* skip */ }
         break;
       }
     }
   }
 
-  spriteTimelines = buildAllTimelines(animation!);
+  const loadedSpriteTimelines = buildAllTimelines(loadedAnimation);
 
   // Compute the true render bounds and correct the preset size / position
   {
-    const bounds = computeAnimationBounds(animation!, textures, spriteTimelines);
+    const bounds = computeAnimationBounds(loadedAnimation, loadedTextures, loadedSpriteTimelines);
     if (bounds.width > 0 && bounds.height > 0) {
-      animation!.position[0] = -bounds.x;
-      animation!.position[1] = -bounds.y;
-      animation!.size[0] = bounds.width;
-      animation!.size[1] = bounds.height;
+      loadedAnimation.position[0] = -bounds.x;
+      loadedAnimation.position[1] = -bounds.y;
+      loadedAnimation.size[0] = bounds.width;
+      loadedAnimation.size[1] = bounds.height;
     }
   }
 
-  zoom = 1.0;
-  panX = 0;
-  panY = 0;
-  updateZoomDisplay();
+  return {
+    displayName,
+    animation: loadedAnimation,
+    textures: loadedTextures,
+    spriteTimelines: loadedSpriteTimelines,
+    loaded,
+  };
+}
 
-  imageFilter = animation!.image.map(() => true);
-  spriteFilter = animation!.sprite.map(() => true);
+async function loadFromFiles(files: File[]): Promise<void> {
+  statusText.textContent = t('status.loading');
+  saveActiveTabState();
+  stop();
 
-  animName.textContent = displayName;
-  populateSpriteSelect();
-  populateImagePanel();
-  populateSpritePanel();
-  detectSpecialLayers();
-
-  speedInput.value = String(animation!.frameRate);
-  speedInput.disabled = false;
-
-  sizeWInput.value = String(animation!.size[0]);
-  sizeHInput.value = String(animation!.size[1]);
-  sizeScaleSelect.value = '1';
-  updateSizeDisplay();
-
-  if (animation!.mainSprite) {
-    spriteSelect.value = 'main';
-    activateSprite(-1);
-  } else if (animation!.sprite.length > 0) {
-    spriteSelect.value = '0';
-    activateSprite(0);
+  const loadedAnimation = await buildLoadedAnimation(files);
+  if (!loadedAnimation) {
+    statusText.textContent = t('status.noPam');
+    return;
   }
 
-  btnClear.disabled = false;
-  statusText.textContent = t('status.loaded', { name: displayName, images: String(animation!.image.length), loaded: String(loaded), sprites: String(animation!.sprite.length) });
-  dropHint.classList.add('hidden');
-  resizeCanvas();
+  const tab = createAnimationTab(loadedAnimation);
+  tabStates.push(tab);
+  activateAnimationTab(tab.id, true);
 }
 
 // ── Clear ──
 btnClear.addEventListener('click', () => {
-  stop();
-  animation = null;
-  textures = new Map();
-  spriteTimelines = null;
-  activeSprite = null;
-  activeSpriteIndex = -1;
-  frameLabels = [];
-  frameRange = { begin: 0, end: 0 };
-  currentFrame = 0;
-  imageFilter = [];
-  spriteFilter = [];
-  plantCustomLayers = [];
-  zombieStateLayers = [];
-  groundSwatchLayers = [];
-  zoom = 1.0; panX = 0; panY = 0;
-  updateZoomDisplay();
-  sizeWInput.value = '0';
-  sizeHInput.value = '0';
-  sizeScaleSelect.value = '1';
-  updateSizeDisplay();
-
-  animName.textContent = t('anim.unloaded');
-  spriteSelect.innerHTML = '';
-  spriteSelect.disabled = true;
-  labelSelect.innerHTML = '';
-  labelSelect.disabled = true;
-  imageList.innerHTML = '';
-  spriteList.innerHTML = '';
-  imgRegexInput.value = '';
-  sprRegexInput.value = '';
-  plantLayerSelect.innerHTML = '';
-  plantLayerSelect.disabled = true;
-  zombieStateSelect.innerHTML = '';
-  zombieStateSelect.disabled = true;
-  groundSwatchCheck.checked = false;
-  groundSwatchCheck.disabled = true;
-  enableControls(false);
-  frameSlider.disabled = true;
-  frameSlider.value = '0'; frameSlider.max = '0';
-  speedInput.disabled = true;
-  rangeBeginInput.disabled = true;
-  rangeEndInput.disabled = true;
-  btnClear.disabled = true;
-  frameDisplay.textContent = '0 / 0';
-  statusText.textContent = t('status.hint');
-
-  // Clear PixiJS stage
-  if (pixiApp) {
-    pixiApp.stage.removeChildren();
-    resetPixiRenderer();
+  if (activeTabId === null) {
+    renderEmptyAnimationState();
+    return;
   }
-  dropHint.classList.remove('hidden');
+  closeAnimationTab(activeTabId);
 });
 
 function blobToImage(fileOrBlob: Blob): Promise<HTMLImageElement> {
@@ -583,7 +880,7 @@ function populateSpriteSelect(): void {
     opt.textContent = `${sp.name || 'sprite_' + i} (${sp.frame.length}f)`;
     spriteSelect.appendChild(opt);
   });
-  spriteSelect.disabled = false;
+  spriteSelect.disabled = spriteSelect.options.length === 0;
 }
 
 spriteSelect.addEventListener('change', () => {
@@ -787,6 +1084,11 @@ function tick(timestamp: number): void {
 
 function updateFrameDisplay(): void {
   const total = activeSprite ? activeSprite.frame.length : 0;
+  if (total === 0) {
+    frameDisplay.textContent = '0 / 0';
+    frameSlider.value = '0';
+    return;
+  }
   frameDisplay.textContent = `${currentFrame} / ${total - 1}`;
   frameSlider.value = String(currentFrame);
 }
@@ -1003,13 +1305,12 @@ btnZoomReset.addEventListener('click', () => {
 // ── Filter panels ──
 function populateImagePanel(): void {
   imageList.innerHTML = '';
-  imgRegexInput.value = '';
   animation!.image.forEach((img, i) => {
     const li = document.createElement('li');
     li.dataset.filterName = parseImageFileName(img.name).toLowerCase();
     const cb = document.createElement('input');
     cb.type = 'checkbox';
-    cb.checked = true;
+    cb.checked = imageFilter[i] ?? true;
     cb.addEventListener('change', () => {
       imageFilter[i] = cb.checked;
       drawCurrentFrame();
@@ -1052,14 +1353,13 @@ function getSpriteThumbTexture(sp: Animation['sprite'][0]): HTMLImageElement | n
 
 function populateSpritePanel(): void {
   spriteList.innerHTML = '';
-  sprRegexInput.value = '';
   animation!.sprite.forEach((sp, i) => {
     const li = document.createElement('li');
     li.dataset.spriteIndex = String(i);
     li.dataset.filterName = (sp.name || 'sprite_' + i).toLowerCase();
     const cb = document.createElement('input');
     cb.type = 'checkbox';
-    cb.checked = true;
+    cb.checked = spriteFilter[i] ?? true;
     cb.addEventListener('change', () => {
       spriteFilter[i] = cb.checked;
       syncSpecialLayerUI();
@@ -1165,18 +1465,7 @@ document.getElementById('btn-spr-none')!.addEventListener('click', () => {
 
 // ── Special Layer Detection & Controls ──
 
-function detectSpecialLayers(): void {
-  plantCustomLayers = [];
-  zombieStateLayers = [];
-  groundSwatchLayers = [];
-
-  animation!.sprite.forEach((sp, i) => {
-    if (!sp.name) return;
-    if (sp.name.startsWith('custom_')) plantCustomLayers.push(i);
-    if (sp.name === 'ink' || sp.name === 'butter') zombieStateLayers.push(i);
-    if (sp.name === 'ground_swatch' || sp.name === 'ground_swatch_plane') groundSwatchLayers.push(i);
-  });
-
+function renderSpecialLayerControls(): void {
   plantLayerSelect.innerHTML = '';
   if (plantCustomLayers.length > 0) {
     for (const idx of plantCustomLayers) {
@@ -1191,10 +1480,6 @@ function detectSpecialLayers(): void {
     plantLayerSelect.appendChild(noneOpt);
     plantLayerSelect.value = 'none';
     plantLayerSelect.disabled = false;
-    for (const idx of plantCustomLayers) {
-      spriteFilter[idx] = false;
-      syncSpriteCheckbox(idx, false);
-    }
   } else {
     plantLayerSelect.disabled = true;
   }
@@ -1213,10 +1498,6 @@ function detectSpecialLayers(): void {
     zombieStateSelect.appendChild(noneOpt);
     zombieStateSelect.value = 'none';
     zombieStateSelect.disabled = false;
-    for (const idx of zombieStateLayers) {
-      spriteFilter[idx] = false;
-      syncSpriteCheckbox(idx, false);
-    }
   } else {
     zombieStateSelect.disabled = true;
   }
@@ -1229,6 +1510,7 @@ function detectSpecialLayers(): void {
     groundSwatchCheck.checked = false;
     groundSwatchCheck.disabled = true;
   }
+  syncSpecialLayerUI();
 }
 
 function syncSpriteCheckbox(sprIndex: number, checked: boolean): void {
