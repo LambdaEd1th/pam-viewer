@@ -16,23 +16,61 @@ import type { Animation, TimelinesMap } from './types';
 
 // ── Settings persistence ──
 const SETTINGS_KEY = 'pam-viewer-settings';
+type ThemePreference = 'system' | 'light' | 'dark';
 
-function loadSettings(): void {
+function readSettings(): Record<string, unknown> | null {
   try {
     const s = JSON.parse(localStorage.getItem(SETTINGS_KEY) ?? 'null');
-    if (!s) return;
-    if (typeof s.loop === 'boolean') loopCheck.checked = s.loop;
-    if (typeof s.autoPlay === 'boolean') autoplayCheck.checked = s.autoPlay;
-    if (typeof s.boundary === 'boolean') boundaryCheck.checked = s.boundary;
-    if (typeof s.reverse === 'boolean') reverseCheck.checked = s.reverse;
-    if (typeof s.keepSpeed === 'boolean') keepSpeedCheck.checked = s.keepSpeed;
-    if (typeof s.showImages === 'boolean') setPanelVisible('images', s.showImages);
-    if (typeof s.showSprites === 'boolean') setPanelVisible('sprites', s.showSprites);
-  } catch { /* ignore corrupt data */ }
+    return s && typeof s === 'object' ? s as Record<string, unknown> : null;
+  } catch {
+    return null;
+  }
+}
+
+function isThemePreference(value: unknown): value is ThemePreference {
+  return value === 'system' || value === 'light' || value === 'dark';
+}
+
+function getStoredThemePreference(): ThemePreference {
+  const s = readSettings();
+  return isThemePreference(s?.theme) ? s.theme : 'system';
+}
+
+const systemDarkMedia = window.matchMedia('(prefers-color-scheme: dark)');
+let themePreference: ThemePreference = getStoredThemePreference();
+
+function applyThemePreference(theme: ThemePreference): void {
+  const resolvedTheme = theme === 'system' ? (systemDarkMedia.matches ? 'dark' : 'light') : theme;
+  document.documentElement.dataset.theme = resolvedTheme;
+  document.documentElement.dataset.themePreference = theme;
+}
+
+applyThemePreference(themePreference);
+
+systemDarkMedia.addEventListener('change', () => {
+  if (themePreference === 'system') applyThemePreference(themePreference);
+});
+
+function loadSettings(): void {
+  const s = readSettings();
+  if (!s) return;
+  if (typeof s.loop === 'boolean') loopCheck.checked = s.loop;
+  if (typeof s.autoPlay === 'boolean') autoplayCheck.checked = s.autoPlay;
+  if (typeof s.boundary === 'boolean') boundaryCheck.checked = s.boundary;
+  if (typeof s.reverse === 'boolean') reverseCheck.checked = s.reverse;
+  if (typeof s.keepSpeed === 'boolean') keepSpeedCheck.checked = s.keepSpeed;
+  if (typeof s.showImages === 'boolean') setPanelVisible('images', s.showImages);
+  if (typeof s.showSprites === 'boolean') setPanelVisible('sprites', s.showSprites);
+  if (isThemePreference(s.theme)) {
+    themePreference = s.theme;
+    applyThemePreference(themePreference);
+    themeSelect.value = themePreference;
+  }
 }
 
 function saveSettings(): void {
   localStorage.setItem(SETTINGS_KEY, JSON.stringify({
+    theme: themePreference,
     loop: loopCheck.checked,
     autoPlay: autoplayCheck.checked,
     boundary: boundaryCheck.checked,
@@ -102,6 +140,7 @@ const exportProgress = $<HTMLProgressElement>('export-progress');
 const exportStatus = $<HTMLSpanElement>('export-status');
 const exportCancelBtn = $<HTMLButtonElement>('export-cancel');
 const langSelect = $<HTMLSelectElement>('lang-select');
+const themeSelect = $<HTMLSelectElement>('theme-select');
 const dropHint = $<HTMLDivElement>('drop-hint');
 
 // ── State ──
@@ -162,10 +201,18 @@ for (const lang of getAvailableLangs()) {
 }
 langSelect.value = getLang();
 langSelect.addEventListener('change', () => setLang(langSelect.value));
+themeSelect.value = themePreference;
+themeSelect.addEventListener('change', () => {
+  if (!isThemePreference(themeSelect.value)) return;
+  themePreference = themeSelect.value;
+  applyThemePreference(themePreference);
+  saveSettings();
+});
 
 onLangChange(() => {
   applyI18n();
   langSelect.value = getLang();
+  themeSelect.value = themePreference;
   if (animation) populateLabelSelect();
 });
 applyI18n();
