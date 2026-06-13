@@ -174,7 +174,6 @@ const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as 
 const btnLoad = $<HTMLButtonElement>('btn-load');
 const btnClear = $<HTMLButtonElement>('btn-clear');
 const animName = $<HTMLSpanElement>('anim-name');
-const tabStrip = $<HTMLDivElement>('tab-strip');
 const animationTabsEl = $<HTMLDivElement>('animation-tabs');
 const spriteSelect = $<HTMLSelectElement>('sprite-select');
 const labelSelect = $<HTMLSelectElement>('label-select');
@@ -184,9 +183,7 @@ const btnNext = $<HTMLButtonElement>('btn-next');
 const frameDisplay = $<HTMLSpanElement>('frame-display');
 const frameSlider = $<HTMLInputElement>('frame-slider');
 const speedInput = $<HTMLInputElement>('speed-input');
-const speedPresetBtn = $<HTMLButtonElement>('speed-preset-btn');
-const speedPresetValue = $<HTMLSpanElement>('speed-preset-value');
-const speedPresetMenu = $<HTMLDivElement>('speed-preset-menu');
+const speedPresetSelect = $<HTMLSelectElement>('speed-preset-select');
 const loopCheck = $<HTMLInputElement>('loop-check');
 const reverseCheck = $<HTMLInputElement>('reverse-check');
 const autoplayCheck = $<HTMLInputElement>('autoplay-check');
@@ -238,6 +235,7 @@ const styledSelects = [
   labelSelect,
   plantLayerSelect,
   zombieStateSelect,
+  speedPresetSelect,
   sizeScaleSelect,
   langSelect,
   themeSelect,
@@ -281,6 +279,7 @@ function hideSelectMenu(): void {
 function buildSelectMenu(select: HTMLSelectElement): void {
   selectMenu.innerHTML = '';
   for (const option of Array.from(select.options)) {
+    if (option.hidden) continue;
     const button = document.createElement('button');
     button.type = 'button';
     const text = option.textContent?.trim() || '\u00a0';
@@ -350,7 +349,6 @@ function positionSelectMenu(): void {
 
 function showSelectMenu(select: HTMLSelectElement): void {
   if (select.disabled || select.options.length === 0) return;
-  hideSpeedPresetMenu();
   hideSelectMenu();
   openSelect = select;
   buildSelectMenu(select);
@@ -663,7 +661,6 @@ function loadTabState(tab: AnimationTab): void {
 }
 
 function renderTabs(): void {
-  tabStrip.classList.toggle('hidden', tabStates.length === 0);
   animationTabsEl.innerHTML = '';
   for (const tab of tabStates) {
     const tabItem = document.createElement('div');
@@ -746,7 +743,7 @@ function renderEmptyAnimationState(): void {
   frameSlider.value = '0';
   frameSlider.max = '0';
   speedInput.disabled = true;
-  speedPresetBtn.disabled = true;
+  speedPresetSelect.disabled = true;
   rangeBeginInput.disabled = true;
   rangeEndInput.disabled = true;
   btnClear.disabled = true;
@@ -791,7 +788,7 @@ function renderActiveTabState(startPlayback = false): void {
     labelSelect.value = labelValue;
     enableControls(true);
     speedInput.disabled = false;
-    speedPresetBtn.disabled = false;
+    speedPresetSelect.disabled = false;
     updateSliderRange();
     updateRangeInputs();
     updateFrameDisplay();
@@ -803,7 +800,7 @@ function renderActiveTabState(startPlayback = false): void {
     rangeBeginInput.disabled = true;
     rangeEndInput.disabled = true;
     speedInput.disabled = true;
-    speedPresetBtn.disabled = true;
+    speedPresetSelect.disabled = true;
     frameDisplay.textContent = '0 / 0';
   }
 
@@ -1935,102 +1932,29 @@ function getBaseFrameRate(): number {
   return (activeSprite as any)?.frameRate ?? animation?.frameRate ?? 30;
 }
 
-function getMatchingSpeedPresetLabel(): string {
+function getMatchingSpeedPresetValue(): string {
   const fps = parseInt(speedInput.value, 10);
-  if (!Number.isFinite(fps)) return '\u00d7';
+  if (!Number.isFinite(fps)) return 'custom';
 
   const baseRate = getBaseFrameRate();
   const preset = SPEED_PRESETS.find(p => Math.round(baseRate * p.factor) === fps);
-  return preset?.label ?? '\u00d7';
+  return preset ? String(preset.factor) : 'custom';
 }
 
 function updateSpeedPresetTrigger(): void {
-  speedPresetValue.textContent = getMatchingSpeedPresetLabel();
+  speedPresetSelect.value = getMatchingSpeedPresetValue();
+  updateSelectControlValue(speedPresetSelect);
 }
 
-function buildSpeedPresetMenu(): void {
-  speedPresetMenu.innerHTML = '';
-  const baseRate = getBaseFrameRate();
-  for (const p of SPEED_PRESETS) {
-    const btn = document.createElement('button');
-    const fps = Math.round(baseRate * p.factor);
-    btn.textContent = `${p.label}  (${fps} FPS)`;
-    if (parseInt(speedInput.value) === fps) btn.classList.add('active');
-    btn.addEventListener('click', () => {
-      speedInput.value = String(fps);
-      speedInput.dispatchEvent(new Event('input', { bubbles: true }));
-      updateSpeedPresetTrigger();
-      hideSpeedPresetMenu();
-    });
-    speedPresetMenu.appendChild(btn);
+speedPresetSelect.addEventListener('change', () => {
+  const preset = SPEED_PRESETS.find(p => String(p.factor) === speedPresetSelect.value);
+  if (!preset) {
+    updateSpeedPresetTrigger();
+    return;
   }
-}
-
-function positionSpeedPresetMenu(): void {
-  const viewportPadding = 8;
-  const menuGap = 6;
-  const buttonRect = speedPresetBtn.getBoundingClientRect();
-  speedPresetMenu.style.setProperty(
-    '--preset-menu-max-height',
-    `${Math.max(96, window.innerHeight - viewportPadding * 2)}px`,
-  );
-
-  const menuRect = speedPresetMenu.getBoundingClientRect();
-  const menuWidth = menuRect.width || 138;
-  const menuHeight = menuRect.height || 0;
-  const maxLeft = window.innerWidth - viewportPadding - menuWidth;
-  const left = Math.max(viewportPadding, Math.min(buttonRect.left, maxLeft));
-
-  const belowTop = buttonRect.bottom + menuGap;
-  const aboveTop = buttonRect.top - menuGap - menuHeight;
-  const hasMoreSpaceAbove =
-    buttonRect.top - viewportPadding > window.innerHeight - buttonRect.bottom - viewportPadding;
-  const top =
-    belowTop + menuHeight <= window.innerHeight - viewportPadding || !hasMoreSpaceAbove
-      ? Math.min(belowTop, window.innerHeight - viewportPadding - menuHeight)
-      : aboveTop;
-
-  speedPresetMenu.style.setProperty('--preset-menu-left', `${Math.round(left)}px`);
-  speedPresetMenu.style.setProperty(
-    '--preset-menu-top',
-    `${Math.round(Math.max(viewportPadding, top))}px`,
-  );
-}
-
-function showSpeedPresetMenu(): void {
-  hideSelectMenu();
-  buildSpeedPresetMenu();
-  speedPresetMenu.classList.remove('hidden');
-  positionSpeedPresetMenu();
-}
-
-function hideSpeedPresetMenu(): void {
-  speedPresetMenu.classList.add('hidden');
-}
-
-function repositionSpeedPresetMenu(): void {
-  if (!speedPresetMenu.classList.contains('hidden')) {
-    positionSpeedPresetMenu();
-  }
-}
-
-speedPresetBtn.addEventListener('click', (e) => {
-  e.stopPropagation();
-  const wasHidden = speedPresetMenu.classList.contains('hidden');
-  if (wasHidden) {
-    showSpeedPresetMenu();
-  } else {
-    hideSpeedPresetMenu();
-  }
+  speedInput.value = String(Math.round(getBaseFrameRate() * preset.factor));
+  speedInput.dispatchEvent(new Event('input', { bubbles: true }));
 });
-
-document.addEventListener('click', (e) => {
-  if (!speedPresetMenu.contains(e.target as Node) && e.target !== speedPresetBtn) {
-    hideSpeedPresetMenu();
-  }
-});
-window.addEventListener('resize', repositionSpeedPresetMenu);
-window.addEventListener('scroll', repositionSpeedPresetMenu, true);
 
 // ── Export helpers ──
 let exportCancelled = false;

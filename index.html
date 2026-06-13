@@ -49,12 +49,20 @@
             <span class="speed-control">
               <input id="speed-input" type="number" value="30" min="1" max="120" step="1" disabled>
               <span class="speed-unit">FPS</span>
-              <button id="speed-preset-btn" class="speed-preset-trigger" type="button" data-i18n-title="speed.preset.title" title="速度预设" disabled>
-                <span id="speed-preset-value">1×</span>
-                <span class="speed-preset-caret">▾</span>
-              </button>
             </span>
-            <div id="speed-preset-menu" class="preset-menu hidden"></div>
+            <span class="select-control select-control-small speed-preset-control">
+              <select id="speed-preset-select" disabled data-i18n-title="speed.preset.title" title="速度预设">
+                <option value="custom" data-i18n="size.scale.custom" hidden>自定</option>
+                <option value="0.25">0.25×</option>
+                <option value="0.5">0.5×</option>
+                <option value="1">1×</option>
+                <option value="1.5">1.5×</option>
+                <option value="2">2×</option>
+                <option value="3">3×</option>
+                <option value="4">4×</option>
+              </select>
+              <span class="select-control-caret">▾</span>
+            </span>
           </label>
           <label><input id="loop-check" type="checkbox" checked> <span data-i18n="check.loop">循环</span></label>
           <label><input id="reverse-check" type="checkbox"> <span data-i18n="check.reverse">反向</span></label>
@@ -131,7 +139,7 @@
         </div>
       </div>
     </header>
-    <div id="tab-strip" class="tab-strip hidden">
+    <div id="tab-strip" class="tab-strip">
       <div id="animation-tabs" class="animation-tabs" role="tablist" aria-label="Animation tabs"></div>
     </div>
     <!-- Export progress overlay -->
