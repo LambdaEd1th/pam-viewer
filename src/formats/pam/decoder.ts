@@ -1,4 +1,4 @@
-import type { RawPamJson } from '../types';
+import type { RawPamJson } from '../../domain/types';
 
 const PAM_MAGIC = 0xBAF01954;
 
@@ -39,14 +39,14 @@ function readImage(r: BinaryReader, version: number): RawDecodedImage {
   const name = r.readString();
   let size: [number, number] | null = null;
   if (version >= 4) {
-    const w = r.readU16();
-    const h = r.readU16();
+    const w = r.readI16();
+    const h = r.readI16();
     size = [w, h];
   }
 
   let transform: number[];
   if (version === 1) {
-    const angle = r.readU16() / 1000.0;
+    const angle = r.readI16() / 1000.0;
     const x = r.readI16() / 20.0;
     const y = r.readI16() / 20.0;
     transform = [angle, x, y];
@@ -86,8 +86,7 @@ function readFrame(r: BinaryReader, version: number): RawDecodedFrame {
     const count = readCount(r);
     for (let i = 0; i < count; i++) {
       const raw = r.readU16();
-      // Removes have no packed flags — the full u16 is the index.
-      let index = raw;
+      let index = raw & 0x7FF;
       if (index === 0x7FF) index = r.readI32();
       remove.push({ index });
     }
@@ -114,7 +113,7 @@ function readFrame(r: BinaryReader, version: number): RawDecodedFrame {
         resource = r.readU8();
       }
 
-      const preload_frame = hasPreloadFrame ? r.readU16() : 0;
+      const preload_frame = hasPreloadFrame ? r.readI16() : 0;
       const name = hasName ? r.readString() : undefined;
       const time_scale = hasTimeScale ? r.readI32() / 65536.0 : 1.0;
 
@@ -184,7 +183,7 @@ function readFrame(r: BinaryReader, version: number): RawDecodedFrame {
       }
 
       if (hasAnimFrameNum) {
-        entry.sprite_frame_number = r.readU16();
+        entry.sprite_frame_number = r.readI16();
       }
 
       change.push(entry);
@@ -196,7 +195,7 @@ function readFrame(r: BinaryReader, version: number): RawDecodedFrame {
   if (isStop) frame.stop = true;
 
   if (hasCommands) {
-    const count = readCount(r);
+    const count = r.readU8();
     frame.command = [];
     for (let i = 0; i < count; i++) {
       const cmd = r.readString();
@@ -227,7 +226,7 @@ function readSprite(r: BinaryReader, version: number): RawDecodedSprite {
     if (name) sprite.name = name;
   }
   if (version >= 6) {
-    r.readString(); // description (unused)
+    r.readString(); // reserved empty string in v6
   }
   if (version >= 4) {
     sprite.frame_rate = r.readI32() / 65536.0;
@@ -236,8 +235,8 @@ function readSprite(r: BinaryReader, version: number): RawDecodedSprite {
   const frameCount = r.readU16();
 
   if (version >= 5) {
-    const start = r.readU16();
-    const duration = r.readU16();
+    const start = r.readI16();
+    const duration = r.readI16();
     sprite.work_area = [start, duration];
   }
 
@@ -256,13 +255,13 @@ export function decodePAM(buffer: ArrayBuffer): RawPamJson {
     throw new Error(`Invalid PAM file: bad magic 0x${magic.toString(16)} (expected 0xBAF01954)`);
   }
 
-  const version = r.readI32();
+  const version = r.readU32();
   if (version < 1 || version > 6) {
     throw new Error(`Unsupported PAM version: ${version}`);
   }
 
   const frame_rate = r.readU8();
-  const position: [number, number] = [r.readU16() / 20.0, r.readU16() / 20.0];
+  const position: [number, number] = [r.readI16() / 20.0, r.readI16() / 20.0];
   const size: [number, number] = [r.readU16() / 20.0, r.readU16() / 20.0];
 
   const imageCount = r.readU16();

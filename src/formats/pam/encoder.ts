@@ -1,4 +1,4 @@
-import type { RawPamJson } from '../types';
+import type { RawPamJson } from '../../domain/types';
 
 const PAM_MAGIC = 0xBAF01954;
 
@@ -57,6 +57,13 @@ function writeCount(w: BinaryWriter, n: number): void {
   }
 }
 
+function writeCommandCount(w: BinaryWriter, n: number): void {
+  if (n > 0xFF) {
+    throw new Error(`PAM command count exceeds u8 range: ${n}`);
+  }
+  w.writeU8(n);
+}
+
 interface RawImg {
   name: string;
   size?: [number, number] | null;
@@ -66,15 +73,18 @@ interface RawImg {
 function writeImage(w: BinaryWriter, img: RawImg, version: number): void {
   w.writeString(img.name);
   if (version >= 4) {
-    w.writeU16(img.size ? img.size[0] : 0);
-    w.writeU16(img.size ? img.size[1] : 0);
+    w.writeI16(Math.round(img.size ? img.size[0] : 0));
+    w.writeI16(Math.round(img.size ? img.size[1] : 0));
   }
 
   const t = img.transform;
   if (version === 1) {
-    w.writeU16(Math.round(t[0] * 1000));
-    w.writeI16(Math.round(t[1] * 20));
-    w.writeI16(Math.round(t[2] * 20));
+    const angle = t.length === 6 ? Math.atan2(t[1], t[0]) : (t[0] ?? 0);
+    const x = t.length === 6 ? t[4] : (t.length === 2 ? t[0] : (t[1] ?? 0));
+    const y = t.length === 6 ? t[5] : (t.length === 2 ? t[1] : (t[2] ?? 0));
+    w.writeI16(Math.round(angle * 1000));
+    w.writeI16(Math.round(x * 20));
+    w.writeI16(Math.round(y * 20));
   } else {
     // PAM v2+ image transforms are always 6-element matrices [a,b,c,d,tx,ty].
     // The decoder always produces this shape; validate it here.
@@ -110,12 +120,8 @@ function writeImage(w: BinaryWriter, img: RawImg, version: number): void {
   }
 }
 
-function needsLongCoords(transform: number[]): boolean {
-  const x = transform[transform.length - 2];
-  const y = transform[transform.length - 1];
-  const xVal = Math.round(x * 20);
-  const yVal = Math.round(y * 20);
-  return xVal < -32768 || xVal > 32767 || yVal < -32768 || yVal > 32767;
+function shouldWriteLongCoords(_transform: number[]): boolean {
+  return true;
 }
 
 interface RawFrameEnc {
@@ -202,7 +208,7 @@ function writeFrame(w: BinaryWriter, frame: RawFrameEnc, version: number): void 
         w.writeU8(a.resource);
       }
 
-      if (hasPreloadFrame) w.writeU16(a.preload_frame!);
+      if (hasPreloadFrame) w.writeI16(a.preload_frame!);
       if (hasName) w.writeString(a.name!);
       if (hasTimeScale) w.writeI32(Math.round(a.time_scale! * 65536));
     }
@@ -214,7 +220,7 @@ function writeFrame(w: BinaryWriter, frame: RawFrameEnc, version: number): void 
       const t = c.transform;
       const isMatrix  = t.length === 6;
       const isRotate  = t.length === 3;
-      const longCoords = needsLongCoords(t);
+      const longCoords = shouldWriteLongCoords(t);
       const hasColor  = c.color !== undefined;
       const hasAnimFrameNum = c.sprite_frame_number !== undefined;
       const hasSrcRect = c.source_rectangle !== undefined;
@@ -264,7 +270,7 @@ function writeFrame(w: BinaryWriter, frame: RawFrameEnc, version: number): void 
       }
 
       if (hasAnimFrameNum) {
-        w.writeU16(c.sprite_frame_number!);
+        w.writeI16(c.sprite_frame_number!);
       }
     }
   }
@@ -272,7 +278,7 @@ function writeFrame(w: BinaryWriter, frame: RawFrameEnc, version: number): void 
   if (hasLabel) w.writeString(frame.label!);
 
   if (hasCommands) {
-    writeCount(w, frame.command!.length);
+    writeCommandCount(w, frame.command!.length);
     for (const [cmd, arg] of frame.command!) {
       w.writeString(cmd);
       w.writeString(arg);
@@ -303,8 +309,8 @@ function writeSprite(w: BinaryWriter, sprite: RawSpriteEnc, version: number): vo
 
   if (version >= 5) {
     const wa = sprite.work_area || [0, frames.length];
-    w.writeU16(wa[0]);
-    w.writeU16(wa[1]);
+    w.writeI16(wa[0]);
+    w.writeI16(wa[1]);
   }
 
   for (const f of frames) {
@@ -315,12 +321,15 @@ function writeSprite(w: BinaryWriter, sprite: RawSpriteEnc, version: number): vo
 export function encodePAM(raw: RawPamJson): ArrayBuffer {
   const w = new BinaryWriter();
   const version = raw.version ?? 6;
+  if (version < 1 || version > 6) {
+    throw new Error(`Unsupported PAM version: ${version}`);
+  }
 
   w.writeU32(PAM_MAGIC);
-  w.writeI32(version);
+  w.writeU32(version);
   w.writeU8(raw.frame_rate ?? 30);
-  w.writeU16(Math.round(raw.position[0] * 20));
-  w.writeU16(Math.round(raw.position[1] * 20));
+  w.writeI16(Math.round(raw.position[0] * 20));
+  w.writeI16(Math.round(raw.position[1] * 20));
   w.writeU16(Math.round(raw.size[0] * 20));
   w.writeU16(Math.round(raw.size[1] * 20));
 
@@ -343,9 +352,8 @@ export function encodePAM(raw: RawPamJson): ArrayBuffer {
     writeSprite(w, ms as unknown as RawSpriteEnc, version);
   } else {
     // v>3: has_main_sprite bool precedes the sprite.
-    // Only write the sprite if it has meaningful content.
     const ms = raw.main_sprite;
-    const hasMain = !!(ms && (ms.frame?.length || ms.name));
+    const hasMain = ms != null;
     w.writeU8(hasMain ? 1 : 0);
     if (hasMain) {
       writeSprite(w, ms as unknown as RawSpriteEnc, version);

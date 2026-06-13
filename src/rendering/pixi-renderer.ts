@@ -1,6 +1,6 @@
 import { Container, Graphics, Matrix, Rectangle, Sprite, Texture } from 'pixi.js';
-import { multiplyColor, multiplyMatrix, transformToMatrix } from './model';
-import type { Animation, Color, Matrix6, TimelinesMap } from './types';
+import { multiplyColor, multiplyMatrix, transformToMatrix } from '../domain/model';
+import type { Animation, Color, Matrix6, TimelinesMap } from '../domain/types';
 
 const IDENTITY_MATRIX: Matrix6 = [1, 0, 0, 1, 0, 0];
 const IDENTITY_PIXI_MATRIX = new Matrix(1, 0, 0, 1, 0, 0);
@@ -14,8 +14,8 @@ let spritePool: Sprite[] = [];
 let containerCursor = 0;
 let spriteCursor = 0;
 
-const imageTextures = new Map<string, Texture>();
-const sourceRectTextures = new Map<string, Texture>();
+const imageTextures = new Map<HTMLImageElement, Texture>();
+const sourceRectTextures = new Map<HTMLImageElement, Map<string, Texture>>();
 
 function clamp01(value: number): number {
   if (value <= 0) return 0;
@@ -117,11 +117,11 @@ function applyMatrixWithLocalScale(
   displayObject.setFromMatrix(pixiMatrix);
 }
 
-function getImageTexture(name: string, image: HTMLImageElement): Texture {
-  const cached = imageTextures.get(name);
+function getImageTexture(image: HTMLImageElement): Texture {
+  const cached = imageTextures.get(image);
   if (cached) return cached;
   const texture = Texture.from(image);
-  imageTextures.set(name, texture);
+  imageTextures.set(image, texture);
   return texture;
 }
 
@@ -137,21 +137,26 @@ function getLayerTexture(
   const image = imageSource.get(imageDef.name);
   if (!image) return null;
 
-  const baseTexture = getImageTexture(imageDef.name, image);
+  const baseTexture = getImageTexture(image);
   if (!sourceRect) return baseTexture;
 
   const [sx, sy, sw, sh] = sourceRect;
   if (sw <= 0 || sh <= 0) return null;
 
-  const key = `${imageDef.name}|${sx}|${sy}|${sw}|${sh}`;
-  const cached = sourceRectTextures.get(key);
+  const key = `${sx}|${sy}|${sw}|${sh}`;
+  let rectTextureMap = sourceRectTextures.get(image);
+  if (!rectTextureMap) {
+    rectTextureMap = new Map<string, Texture>();
+    sourceRectTextures.set(image, rectTextureMap);
+  }
+  const cached = rectTextureMap.get(key);
   if (cached) return cached;
 
   const texture = new Texture({
     source: baseTexture.source,
     frame: new Rectangle(sx, sy, sw, sh),
   });
-  sourceRectTextures.set(key, texture);
+  rectTextureMap.set(key, texture);
   return texture;
 }
 
@@ -268,8 +273,8 @@ export function renderFrameToPixiContainer(
   enforcePoolCaps();
   resetFramePoolsUsage();
 
-  const sx = zoom;
-  const sy = zoom;
+  const sx = zoom * dpr;
+  const sy = zoom * dpr;
   const cx = canvasW / 2 + panX * dpr;
   const cy = canvasH / 2 + panY * dpr;
   const baseMatrix: Matrix6 = [sx, 0, 0, sy, cx, cy];
@@ -307,8 +312,8 @@ export function createBoundaryOverlay(
   const overlay = new Container();
   const g = new Graphics();
 
-  const sx = zoom;
-  const sy = zoom;
+  const sx = zoom * dpr;
+  const sy = zoom * dpr;
   const cx = canvasW / 2 + panX * dpr;
   const cy = canvasH / 2 + panY * dpr;
   const bw = animation.size[0];
@@ -357,8 +362,10 @@ export function resetPixiRenderer(): void {
 
   // sourceRect textures share the same source as base image textures,
   // so keep source alive here and let imageTextures release it below.
-  for (const texture of sourceRectTextures.values()) {
-    texture.destroy(false); // keep shared source alive
+  for (const textureMap of sourceRectTextures.values()) {
+    for (const texture of textureMap.values()) {
+      texture.destroy(false); // keep shared source alive
+    }
   }
   sourceRectTextures.clear();
 

@@ -79,20 +79,34 @@ Re-importing the FLA restores the original PAM data via the sidecar, so you can 
 
 ```
 src/
-  main.ts           Entry point & UI controller (~1 900 lines)
-  types.ts          Shared TypeScript type definitions
-  model.ts          Data parsing, matrix math, colour blending
-  renderer.ts  PixiJS v8 rendering engine
-  timeline-utils.ts Timeline build + bounding-box computation
-  i18n.ts           Internationalisation (zh-CN / en)
-  style.css         Stylesheet
-  codec/
-    decoder.ts      PAM binary → RawPamJson  (versions 1–6)
-    encoder.ts      RawPamJson → PAM binary
-    serializer.ts   Animation → RawPamJson
-  fla/
-    exporter.ts     Animation → FLA (XFL ZIP)
-    importer.ts     FLA (XFL ZIP) → RawPamJson + PNG textures
+  main.ts                  App bootstrap
+  app/
+    main.ts                UI controller and app state
+    files.ts               Drag/drop, directory walking, image loading
+    load-animation.ts      PAM/FLA/XFL loading + texture resolution
+    special-layers.ts      PvZ2-specific layer defaults
+  domain/
+    types.ts               Shared TypeScript type definitions
+    model.ts               Data parsing, matrix math, colour blending
+    timeline.ts            Timeline build + bounding-box computation
+  rendering/
+    pixi-renderer.ts       PixiJS v8 rendering engine
+  formats/
+    pam/
+      decoder.ts           PAM binary → RawPamJson  (versions 1–6)
+      encoder.ts           RawPamJson → PAM binary
+      serializer.ts        Animation → RawPamJson
+    fla/
+      exporter.ts          Animation → FLA (XFL ZIP)
+      importer.ts          FLA (XFL ZIP) → RawPamJson + PNG textures
+  export/
+    apng.ts                Animated PNG encoder
+    animated-webp.ts       Animated WebP encoder
+    download.ts            Browser download + export naming helpers
+  localization/
+    i18n.ts                Internationalisation (zh-CN / en)
+  styles/
+    app.css                Stylesheet
 ```
 
 ## Tech Stack

@@ -10,84 +10,126 @@
 <body>
   <div id="app">
     <header id="toolbar">
-      <button id="btn-load" data-i18n="btn.load" data-i18n-title="btn.load.title" title="加载动画文件夹">📂 加载</button>
-      <button id="btn-clear" data-i18n="btn.clear" data-i18n-title="btn.clear.title" title="清除动画" disabled>✕ 清除</button>
-      <span id="anim-name" class="toolbar-label">未加载</span>
-      <div class="toolbar-sep"></div>
-      <label data-i18n-text="label.sprite">Sprite:
-        <select id="sprite-select" disabled></select>
-      </label>
-      <label data-i18n-text="label.tag">标签:
-        <select id="label-select" disabled></select>
-      </label>
-      <div class="toolbar-sep"></div>
-      <button id="btn-prev" data-i18n-title="btn.prev.title" title="上一帧" disabled>⏮</button>
-      <button id="btn-play" data-i18n-title="btn.play.title" title="播放/暂停" disabled>▶</button>
-      <button id="btn-next" data-i18n-title="btn.next.title" title="下一帧" disabled>⏭</button>
-      <span id="frame-display">0 / 0</span>
-      <input id="frame-slider" type="range" min="0" max="0" value="0" step="1" disabled data-i18n-title="frame.slider.title" title="拖动跳转帧">
-      <label class="frame-range-label" data-i18n-text="label.range">范围:
-        <input id="range-begin" type="number" min="0" value="0" disabled data-i18n-title="range.begin.title" title="起始帧">
-        <span>–</span>
-        <input id="range-end" type="number" min="0" value="0" disabled data-i18n-title="range.end.title" title="结束帧">
-      </label>
-      <div class="toolbar-sep"></div>
-      <label class="speed-label" data-i18n-text="label.speed">速度:
-        <input id="speed-input" type="number" value="30" min="1" max="120" step="1" disabled>
-        <span>FPS</span>
-        <button id="speed-preset-btn" type="button" data-i18n-title="speed.preset.title" title="速度预设">▾</button>
-        <div id="speed-preset-menu" class="preset-menu hidden"></div>
-      </label>
-      <label><input id="loop-check" type="checkbox" checked> <span data-i18n="check.loop">循环</span></label>
-      <label><input id="reverse-check" type="checkbox"> <span data-i18n="check.reverse">反向</span></label>
-      <label><input id="autoplay-check" type="checkbox" checked> <span data-i18n="check.autoplay">自动播放</span></label>
-      <label><input id="keep-speed-check" type="checkbox"> <span data-i18n="check.keepSpeed">保持速度</span></label>
-      <label><input id="boundary-check" type="checkbox"> <span data-i18n="check.boundary">边界</span></label>
-      <div class="toolbar-sep"></div>
-      <label data-i18n-text="label.plantLayer">植物层:
-        <select id="plant-layer-select" disabled></select>
-      </label>
-      <label data-i18n-text="label.zombieState">僵尸状态:
-        <select id="zombie-state-select" disabled></select>
-      </label>
-      <label><input id="ground-swatch-check" type="checkbox" disabled> <span data-i18n="check.groundSwatch">地面色板</span></label>
-      <div class="toolbar-sep"></div>
-      <button id="btn-toggle-images" class="btn-panel-toggle active" data-i18n-title="btn.toggleImages.title" title="Image 面板">🖼</button>
-      <button id="btn-toggle-sprites" class="btn-panel-toggle active" data-i18n-title="btn.toggleSprites.title" title="Sprite 面板">🎭</button>
-      <button id="btn-zoom-reset" data-i18n-title="btn.zoomReset.title" title="重置视图">⊙</button>
-      <div class="toolbar-sep"></div>
-      <label class="size-label" data-i18n-text="label.size" data-i18n-title="label.size" title="动画尺寸 (宽×高)">尺寸:
-        <input id="size-w" type="number" min="1" max="9999" value="0" disabled>
-        <span>×</span>
-        <input id="size-h" type="number" min="1" max="9999" value="0" disabled>
-        <select id="size-scale" disabled data-i18n-title="size.scale.title" title="导出倍率">
-          <option value="1">1×</option>
-          <option value="2">2×</option>
-          <option value="3">3×</option>
-          <option value="4">4×</option>
-        </select>
-      </label>
-      <div class="toolbar-sep"></div>
-      <button id="btn-export-png" data-i18n-title="btn.exportPng.title" title="导出当前帧为 PNG" disabled>📷 PNG</button>
-      <button id="btn-export-apng" data-i18n-title="btn.exportApng.title" title="导出动画为 APNG" disabled>🧱 APNG</button>
-      <button id="btn-export-webp" data-i18n-title="btn.exportWebp.title" title="导出动画为 WebP" disabled>🎞 WebP</button>
-      <button id="btn-export-fla" data-i18n-title="btn.exportFla.title" title="导出为 FLA (Adobe Animate)" disabled>🎬 FLA</button>
-      <div class="toolbar-sep"></div>
-      <button id="btn-convert-json" data-i18n-title="btn.convertJson.title" title="转换为 JSON" disabled>⇄ JSON</button>
-      <button id="btn-convert-yaml" data-i18n-title="btn.convertYaml.title" title="转换为 YAML" disabled>⇄ YAML</button>
-      <button id="btn-convert-toml" data-i18n-title="btn.convertToml.title" title="转换为 TOML" disabled>⇄ TOML</button>
-      <button id="btn-convert-pam" data-i18n-title="btn.convertPam.title" title="转换为 PAM 二进制" disabled>⇄ PAM</button>
-      <div class="toolbar-sep"></div>
-      <label class="lang-label"><span data-i18n="label.lang">语言</span>
-        <select id="lang-select"></select>
-      </label>
-      <label class="theme-label" data-i18n-text="label.theme">主题:
-        <select id="theme-select" data-i18n-title="theme.select.title" title="切换深色/浅色模式">
-          <option value="system" data-i18n="theme.system">跟随系统</option>
-          <option value="light" data-i18n="theme.light">浅色</option>
-          <option value="dark" data-i18n="theme.dark">深色</option>
-        </select>
-      </label>
+      <div class="toolbar-row toolbar-row-primary">
+        <div class="toolbar-group toolbar-group-file">
+          <button id="btn-load" class="btn-primary" data-i18n="btn.load" data-i18n-title="btn.load.title" title="加载动画文件夹">📂 加载</button>
+          <button id="btn-clear" class="btn-quiet" data-i18n="btn.clear" data-i18n-title="btn.clear.title" title="清除动画" disabled>✕ 清除</button>
+          <span id="anim-name" class="toolbar-label">未加载</span>
+        </div>
+        <div class="toolbar-group toolbar-group-selectors">
+          <label data-i18n-text="label.sprite">Sprite:
+            <span class="select-control">
+              <select id="sprite-select" disabled></select>
+              <span class="select-control-caret">▾</span>
+            </span>
+          </label>
+          <label data-i18n-text="label.tag">标签:
+            <span class="select-control">
+              <select id="label-select" disabled></select>
+              <span class="select-control-caret">▾</span>
+            </span>
+          </label>
+        </div>
+        <div class="toolbar-group toolbar-group-playback">
+          <button id="btn-prev" class="btn-icon" data-i18n-title="btn.prev.title" title="上一帧" disabled>⏮</button>
+          <button id="btn-play" class="btn-icon btn-play" data-i18n-title="btn.play.title" title="播放/暂停" disabled>▶</button>
+          <button id="btn-next" class="btn-icon" data-i18n-title="btn.next.title" title="下一帧" disabled>⏭</button>
+          <span id="frame-display">0 / 0</span>
+          <input id="frame-slider" type="range" min="0" max="0" value="0" step="1" disabled data-i18n-title="frame.slider.title" title="拖动跳转帧">
+          <label class="frame-range-label" data-i18n-text="label.range">范围:
+            <input id="range-begin" type="number" min="0" value="0" disabled data-i18n-title="range.begin.title" title="起始帧">
+            <span>–</span>
+            <input id="range-end" type="number" min="0" value="0" disabled data-i18n-title="range.end.title" title="结束帧">
+          </label>
+        </div>
+      </div>
+      <div class="toolbar-row toolbar-row-secondary">
+        <div class="toolbar-group toolbar-group-speed">
+          <label class="speed-label" data-i18n-text="label.speed">速度:
+            <span class="speed-control">
+              <input id="speed-input" type="number" value="30" min="1" max="120" step="1" disabled>
+              <span class="speed-unit">FPS</span>
+              <button id="speed-preset-btn" class="speed-preset-trigger" type="button" data-i18n-title="speed.preset.title" title="速度预设" disabled>
+                <span id="speed-preset-value">1×</span>
+                <span class="speed-preset-caret">▾</span>
+              </button>
+            </span>
+            <div id="speed-preset-menu" class="preset-menu hidden"></div>
+          </label>
+          <label><input id="loop-check" type="checkbox" checked> <span data-i18n="check.loop">循环</span></label>
+          <label><input id="reverse-check" type="checkbox"> <span data-i18n="check.reverse">反向</span></label>
+          <label><input id="autoplay-check" type="checkbox" checked> <span data-i18n="check.autoplay">自动播放</span></label>
+          <label><input id="keep-speed-check" type="checkbox"> <span data-i18n="check.keepSpeed">保持速度</span></label>
+          <label><input id="boundary-check" type="checkbox"> <span data-i18n="check.boundary">边界</span></label>
+        </div>
+        <div class="toolbar-group toolbar-group-layers">
+          <label data-i18n-text="label.plantLayer">植物层:
+            <span class="select-control">
+              <select id="plant-layer-select" disabled></select>
+              <span class="select-control-caret">▾</span>
+            </span>
+          </label>
+          <label data-i18n-text="label.zombieState">僵尸状态:
+            <span class="select-control">
+              <select id="zombie-state-select" disabled></select>
+              <span class="select-control-caret">▾</span>
+            </span>
+          </label>
+          <label><input id="ground-swatch-check" type="checkbox" disabled> <span data-i18n="check.groundSwatch">地面色板</span></label>
+        </div>
+        <div class="toolbar-group toolbar-group-view">
+          <button id="btn-toggle-images" class="btn-icon btn-icon-text btn-panel-toggle active" data-i18n-title="btn.toggleImages.title" title="Image 面板"><span aria-hidden="true">🖼</span><span data-i18n="btn.toggleImages">Images</span></button>
+          <button id="btn-toggle-sprites" class="btn-icon btn-icon-text btn-panel-toggle active" data-i18n-title="btn.toggleSprites.title" title="Sprite 面板"><span aria-hidden="true">🎭</span><span data-i18n="btn.toggleSprites">Sprites</span></button>
+          <button id="btn-zoom-reset" class="btn-icon btn-icon-text" data-i18n-title="btn.zoomReset.title" title="重置视图"><span aria-hidden="true">⊙</span><span data-i18n="btn.zoomReset">重置视图</span></button>
+        </div>
+        <div class="toolbar-group toolbar-group-size">
+          <label class="size-label" data-i18n-text="label.size" data-i18n-title="label.size.title" title="PNG / APNG / WebP 导出尺寸 (宽×高)">尺寸:
+            <input id="size-w" type="number" min="1" max="99999" value="0" disabled>
+            <span>×</span>
+            <input id="size-h" type="number" min="1" max="99999" value="0" disabled>
+            <span class="select-control select-control-small">
+              <select id="size-scale" disabled data-i18n-title="size.scale.title" title="导出倍率">
+                <option value="custom" data-i18n="size.scale.custom">自定</option>
+                <option value="1">1×</option>
+                <option value="2">2×</option>
+                <option value="3">3×</option>
+                <option value="4">4×</option>
+              </select>
+              <span class="select-control-caret">▾</span>
+            </span>
+          </label>
+        </div>
+        <div class="toolbar-group toolbar-group-prefs">
+          <label class="lang-label"><span data-i18n="label.lang">语言:</span>
+            <span class="select-control">
+              <select id="lang-select"></select>
+              <span class="select-control-caret">▾</span>
+            </span>
+          </label>
+          <label class="theme-label" data-i18n-text="label.theme">主题:
+            <span class="select-control">
+              <select id="theme-select" data-i18n-title="theme.select.title" title="切换深色/浅色模式">
+                <option value="system" data-i18n="theme.system">跟随系统</option>
+                <option value="light" data-i18n="theme.light">浅色</option>
+                <option value="dark" data-i18n="theme.dark">深色</option>
+              </select>
+              <span class="select-control-caret">▾</span>
+            </span>
+          </label>
+        </div>
+        <div class="toolbar-group toolbar-group-export">
+          <button id="btn-export-png" data-i18n-title="btn.exportPng.title" title="导出当前帧为 PNG" disabled>📷 PNG</button>
+          <button id="btn-export-apng" data-i18n-title="btn.exportApng.title" title="导出动画为 APNG" disabled>🧱 APNG</button>
+          <button id="btn-export-webp" data-i18n-title="btn.exportWebp.title" title="导出动画为 WebP" disabled>🎞 WebP</button>
+          <button id="btn-export-fla" data-i18n-title="btn.exportFla.title" title="导出为 FLA (Adobe Animate)" disabled>🎬 FLA</button>
+        </div>
+        <div class="toolbar-group toolbar-group-convert">
+          <button id="btn-convert-json" data-i18n-title="btn.convertJson.title" title="转换为 JSON" disabled>⇄ JSON</button>
+          <button id="btn-convert-yaml" data-i18n-title="btn.convertYaml.title" title="转换为 YAML" disabled>⇄ YAML</button>
+          <button id="btn-convert-toml" data-i18n-title="btn.convertToml.title" title="转换为 TOML" disabled>⇄ TOML</button>
+          <button id="btn-convert-pam" data-i18n-title="btn.convertPam.title" title="转换为 PAM 二进制" disabled>⇄ PAM</button>
+        </div>
+      </div>
     </header>
     <div id="tab-strip" class="tab-strip hidden">
       <div id="animation-tabs" class="animation-tabs" role="tablist" aria-label="Animation tabs"></div>

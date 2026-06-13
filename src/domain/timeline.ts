@@ -1,4 +1,4 @@
-import { transformToMatrix, multiplyMatrix } from './model';
+import { multiplyMatrix, transformToMatrix } from './model';
 import type { Animation, Color, Matrix6, LayerSnapshot, SpriteTimeline, TimelinesMap } from './types';
 
 const DEFAULT_COLOR: Color = { r: 1, g: 1, b: 1, a: 1 };
