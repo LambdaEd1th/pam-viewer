@@ -1,2 +1,4 @@
 node_modules/
 dist/
+src/wasm/pam-codec/
+wasm/pam-codec-wasm/target/

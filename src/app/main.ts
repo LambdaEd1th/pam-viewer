@@ -5,6 +5,7 @@ import { parseImageFileName, parseSpriteFrameLabels } from '../domain/model';
 import { computeAnimationBounds } from '../domain/timeline';
 import { encodePAM } from '../formats/pam/encoder';
 import { toRawJson } from '../formats/pam/serializer';
+import { loadPamCodecWasm } from '../formats/pam/wasm';
 import { exportFLA } from '../formats/fla/exporter';
 import { t, getLang, setLang, onLangChange, getAvailableLangs, getLangLabel } from '../localization/i18n';
 import { renderFrameToPixiContainer, createBoundaryOverlay, resetPixiRenderer } from '../rendering/pixi-renderer';
@@ -2118,10 +2119,11 @@ function getConvertName(ext: string): string {
   return stripKnownAnimationExtension(animName.textContent!) + '.pam.' + ext;
 }
 
-btnConvertJson.addEventListener('click', () => {
+btnConvertJson.addEventListener('click', async () => {
   if (!animation) return;
   const raw = toRawJson(animation);
-  const text = JSON.stringify(raw, null, 2);
+  const wasm = await loadPamCodecWasm();
+  const text = wasm.pamToJson(raw) + '\n';
   const blob = new Blob([text], { type: 'application/json' });
   downloadBlob(blob, getConvertName('json'));
 });
@@ -2142,10 +2144,10 @@ btnConvertToml.addEventListener('click', () => {
   downloadBlob(blob, getConvertName('toml'));
 });
 
-btnConvertPam.addEventListener('click', () => {
+btnConvertPam.addEventListener('click', async () => {
   if (!animation) return;
   const raw = toRawJson(animation);
-  const buf = encodePAM(raw);
+  const buf = await encodePAM(raw);
   const blob = new Blob([buf], { type: 'application/octet-stream' });
   const name = stripKnownAnimationExtension(animName.textContent!) + '.pam';
   downloadBlob(blob, name);

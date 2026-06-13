@@ -9,6 +9,25 @@ export function toRawJson(anim: Animation): RawPamJson {
     }
   };
 
+  const imageTransformToRaw = (t: Animation['image'][0]['transform']): number[] => {
+    if (anim.version === 1) {
+      switch (t.type) {
+        case 'translate': return [0, t.x, t.y];
+        case 'rotate_translate': return [t.angle, t.x, t.y];
+        case 'matrix_translate': return [Math.atan2(t.b, t.a), t.x, t.y];
+      }
+    }
+    switch (t.type) {
+      case 'translate': return [1, 0, 0, 1, t.x, t.y];
+      case 'rotate_translate': {
+        const cos = Math.cos(t.angle);
+        const sin = Math.sin(t.angle);
+        return [cos, sin, -sin, cos, t.x, t.y];
+      }
+      case 'matrix_translate': return [t.a, t.b, t.c, t.d, t.x, t.y];
+    }
+  };
+
   const frameToRaw = (f: Animation['sprite'][0]['frame'][0]) => {
     const raw: Record<string, unknown> = {};
     if (f.label != null) raw.label = f.label;
@@ -34,7 +53,12 @@ export function toRawJson(anim: Animation): RawPamJson {
         const entry: Record<string, unknown> = { index: c.index, transform: transformToRaw(c.transform) };
         if (c.color) entry.color = [c.color.r, c.color.g, c.color.b, c.color.a];
         if (c.spriteFrameNumber != null) entry.sprite_frame_number = c.spriteFrameNumber;
-        if (c.sourceRectangle) entry.source_rectangle = c.sourceRectangle;
+        if (c.sourceRectangle) {
+          entry.source_rectangle = {
+            position: [c.sourceRectangle[0], c.sourceRectangle[1]],
+            size: [c.sourceRectangle[2], c.sourceRectangle[3]],
+          };
+        }
         return entry;
       });
     }
@@ -43,9 +67,13 @@ export function toRawJson(anim: Animation): RawPamJson {
 
   const spriteToRaw = (s: Animation['sprite'][0]) => {
     const raw: Record<string, unknown> = {};
-    if (s.name != null) raw.name = s.name;
-    if (s.frameRate != null) raw.frame_rate = s.frameRate;
-    if (s.workArea) raw.work_area = [s.workArea.start, s.workArea.duration];
+    if (anim.version >= 4) {
+      raw.name = s.name ?? '';
+      raw.frame_rate = s.frameRate ?? 0;
+    }
+    if (anim.version >= 5) {
+      raw.work_area = s.workArea ? [s.workArea.start, s.workArea.duration] : [0, s.frame.length];
+    }
     raw.frame = s.frame.map(frameToRaw);
     return raw;
   };
@@ -56,11 +84,11 @@ export function toRawJson(anim: Animation): RawPamJson {
     position: anim.position,
     size: anim.size,
     image: anim.image.map(img => {
-      const raw: Record<string, unknown> = { name: img.name, transform: transformToRaw(img.transform) };
-      if (img.size) raw.size = [img.size.width, img.size.height];
+      const raw: Record<string, unknown> = { name: img.name, transform: imageTransformToRaw(img.transform) };
+      if (anim.version >= 4) raw.size = img.size ? [img.size.width, img.size.height] : [0, 0];
       return raw;
     }),
     sprite: anim.sprite.map(spriteToRaw),
-    main_sprite: anim.mainSprite ? spriteToRaw(anim.mainSprite) : null,
+    main_sprite: anim.mainSprite ? spriteToRaw(anim.mainSprite) : (anim.version <= 3 ? spriteToRaw({ name: null, frameRate: null, workArea: null, frame: [] }) : null),
   } as unknown as RawPamJson;
 }

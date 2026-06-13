@@ -1,4 +1,5 @@
 import type { RawPamJson } from '../../domain/types';
+import { loadPamCodecWasm } from './wasm';
 
 const PAM_MAGIC = 0xBAF01954;
 
@@ -169,10 +170,10 @@ function readFrame(r: BinaryReader, version: number): RawDecodedFrame {
       const entry: Record<string, unknown> = { index, transform };
 
       if (hasSrcRect) {
-        entry.source_rectangle = [
-          r.readI16() / 20, r.readI16() / 20,
-          r.readI16() / 20, r.readI16() / 20,
-        ];
+        entry.source_rectangle = {
+          position: [r.readI16() / 20, r.readI16() / 20],
+          size: [r.readI16() / 20, r.readI16() / 20],
+        };
       }
 
       if (hasColor) {
@@ -223,7 +224,7 @@ function readSprite(r: BinaryReader, version: number): RawDecodedSprite {
 
   if (version >= 4) {
     const name = r.readString();
-    if (name) sprite.name = name;
+    sprite.name = name;
   }
   if (version >= 6) {
     r.readString(); // reserved empty string in v6
@@ -247,7 +248,7 @@ function readSprite(r: BinaryReader, version: number): RawDecodedSprite {
   return sprite;
 }
 
-export function decodePAM(buffer: ArrayBuffer): RawPamJson {
+function decodePAMFallback(buffer: ArrayBuffer): RawPamJson {
   const r = new BinaryReader(buffer);
 
   const magic = r.readU32();
@@ -295,4 +296,14 @@ export function decodePAM(buffer: ArrayBuffer): RawPamJson {
     sprite,
     main_sprite,
   } as unknown as RawPamJson;
+}
+
+export async function decodePAM(buffer: ArrayBuffer): Promise<RawPamJson> {
+  try {
+    const wasm = await loadPamCodecWasm();
+    return wasm.decodePam(new Uint8Array(buffer)) as RawPamJson;
+  } catch (error) {
+    console.warn('pam-codec wasm decode failed; falling back to TypeScript decoder.', error);
+    return decodePAMFallback(buffer);
+  }
 }

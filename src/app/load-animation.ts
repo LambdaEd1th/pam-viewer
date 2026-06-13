@@ -70,7 +70,7 @@ export async function buildLoadedAnimation(files: File[]): Promise<LoadedAnimati
       loadedAnimation = parseAnimation(smolTomlMod.parse(text));
     } else {
       const buf = await pamBinFile!.arrayBuffer();
-      loadedAnimation = parseAnimation(decodePAM(buf));
+      loadedAnimation = parseAnimation(await decodePAM(buf));
     }
   }
   if (!loadedAnimation) return null;

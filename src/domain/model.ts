@@ -1,4 +1,4 @@
-import type { Transform, Matrix6, Color, Animation, Sprite, Frame, FrameLabel } from './types';
+import type { Transform, Matrix6, Color, Animation, Sprite, Frame, FrameLabel, RawRectangle } from './types';
 
 export function parseImageFileName(value: string): string {
   let result = value;
@@ -66,6 +66,14 @@ export function multiplyColor(parent: Color, child: Color): Color {
   };
 }
 
+function parseSourceRectangle(rect: RawRectangle | null | undefined): [number, number, number, number] | null {
+  if (!rect) return null;
+  if (!Array.isArray(rect.position) || !Array.isArray(rect.size)) {
+    throw new Error('Invalid source_rectangle: expected { position: [x, y], size: [w, h] }');
+  }
+  return [rect.position[0], rect.position[1], rect.size[0], rect.size[1]];
+}
+
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export function parseAnimation(json: any): Animation {
   const parseFrame = (f: any): Frame => ({
@@ -87,7 +95,7 @@ export function parseAnimation(json: any): Animation {
       transform: parseTransform(c.transform),
       color: c.color ? { r: c.color[0], g: c.color[1], b: c.color[2], a: c.color[3] } : null,
       spriteFrameNumber: c.sprite_frame_number ?? null,
-      sourceRectangle: c.source_rectangle ?? null,
+      sourceRectangle: parseSourceRectangle(c.source_rectangle),
     })),
   });
 

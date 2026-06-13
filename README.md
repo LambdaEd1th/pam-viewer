@@ -40,8 +40,13 @@ A browser-based viewer and exporter for PopCap PAM (PopAnim) animation files, us
 
 ### Build
 
+`pam-viewer` builds its local Rust/WASM wrapper crate with `wasm-pack`.
+The wrapper depends on `pam-codec` through its GitHub URL: `https://github.com/LambdaEd1th/pam-codec`.
+
 ```bash
+cargo install wasm-pack
 npm install
+npm run build:wasm # optional; dev/build run this automatically
 npm run dev      # Vite dev server with HMR
 npm run build    # type-check + production build → dist/
 npm run preview  # preview the production build
@@ -89,12 +94,15 @@ src/
     types.ts               Shared TypeScript type definitions
     model.ts               Data parsing, matrix math, colour blending
     timeline.ts            Timeline build + bounding-box computation
+  wasm/
+    pam-codec/             Generated JS/WASM package, ignored by git
   rendering/
     pixi-renderer.ts       PixiJS v8 rendering engine
   formats/
     pam/
-      decoder.ts           PAM binary → RawPamJson  (versions 1–6)
-      encoder.ts           RawPamJson → PAM binary
+      wasm.ts              Lazy loader for generated pam-codec wasm
+      decoder.ts           PAM binary → RawPamJson via pam-codec wasm
+      encoder.ts           RawPamJson → PAM binary via pam-codec wasm
       serializer.ts        Animation → RawPamJson
     fla/
       exporter.ts          Animation → FLA (XFL ZIP)
@@ -107,6 +115,8 @@ src/
     i18n.ts                Internationalisation (zh-CN / en)
   styles/
     app.css                Stylesheet
+wasm/
+  pam-codec-wasm/          Rust/WASM wrapper around pam-codec
 ```
 
 ## Tech Stack

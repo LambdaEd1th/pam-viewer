@@ -1,4 +1,5 @@
-import type { RawPamJson } from '../../domain/types';
+import type { RawPamJson, RawRectangle } from '../../domain/types';
+import { loadPamCodecWasm } from './wasm';
 
 const PAM_MAGIC = 0xBAF01954;
 
@@ -73,50 +74,25 @@ interface RawImg {
 function writeImage(w: BinaryWriter, img: RawImg, version: number): void {
   w.writeString(img.name);
   if (version >= 4) {
-    w.writeI16(Math.round(img.size ? img.size[0] : 0));
-    w.writeI16(Math.round(img.size ? img.size[1] : 0));
+    if (!img.size) throw new Error('PAM image.size is required for version 4+');
+    w.writeI16(Math.round(img.size[0]));
+    w.writeI16(Math.round(img.size[1]));
   }
 
   const t = img.transform;
   if (version === 1) {
-    const angle = t.length === 6 ? Math.atan2(t[1], t[0]) : (t[0] ?? 0);
-    const x = t.length === 6 ? t[4] : (t.length === 2 ? t[0] : (t[1] ?? 0));
-    const y = t.length === 6 ? t[5] : (t.length === 2 ? t[1] : (t[2] ?? 0));
-    w.writeI16(Math.round(angle * 1000));
-    w.writeI16(Math.round(x * 20));
-    w.writeI16(Math.round(y * 20));
+    if (t.length !== 3) throw new Error(`PAM v1 image.transform must have 3 values, got ${t.length}`);
+    w.writeI16(Math.round(t[0] * 1000));
+    w.writeI16(Math.round(t[1] * 20));
+    w.writeI16(Math.round(t[2] * 20));
   } else {
-    // PAM v2+ image transforms are always 6-element matrices [a,b,c,d,tx,ty].
-    // The decoder always produces this shape; validate it here.
-    console.assert(
-      t.length === 6 || t.length === 3 || t.length === 2,
-      `ImageInfo transform: expected 2, 3, or 6 elements, got ${t.length}`
-    );
-    if (t.length === 6) {
-      w.writeI32(Math.round(t[0] * 1310720));
-      w.writeI32(Math.round(t[2] * 1310720));
-      w.writeI32(Math.round(t[1] * 1310720));
-      w.writeI32(Math.round(t[3] * 1310720));
-      w.writeI16(Math.round(t[4] * 20));
-      w.writeI16(Math.round(t[5] * 20));
-    } else if (t.length === 3) {
-      const angle = t[0];
-      const cos = Math.cos(angle);
-      const sin = Math.sin(angle);
-      w.writeI32(Math.round(cos * 1310720));
-      w.writeI32(Math.round(-sin * 1310720));
-      w.writeI32(Math.round(sin * 1310720));
-      w.writeI32(Math.round(cos * 1310720));
-      w.writeI16(Math.round(t[1] * 20));
-      w.writeI16(Math.round(t[2] * 20));
-    } else {
-      w.writeI32(Math.round(1.0 * 1310720));
-      w.writeI32(0);
-      w.writeI32(0);
-      w.writeI32(Math.round(1.0 * 1310720));
-      w.writeI16(Math.round(t[0] * 20));
-      w.writeI16(Math.round(t[1] * 20));
-    }
+    if (t.length !== 6) throw new Error(`PAM v2+ image.transform must have 6 values, got ${t.length}`);
+    w.writeI32(Math.round(t[0] * 1310720));
+    w.writeI32(Math.round(t[2] * 1310720));
+    w.writeI32(Math.round(t[1] * 1310720));
+    w.writeI32(Math.round(t[3] * 1310720));
+    w.writeI16(Math.round(t[4] * 20));
+    w.writeI16(Math.round(t[5] * 20));
   }
 }
 
@@ -143,7 +119,7 @@ interface RawFrameEnc {
     transform: number[];
     color?: number[];
     sprite_frame_number?: number;
-    source_rectangle?: number[];
+    source_rectangle?: RawRectangle | null;
   }[];
 }
 
@@ -223,7 +199,7 @@ function writeFrame(w: BinaryWriter, frame: RawFrameEnc, version: number): void 
       const longCoords = shouldWriteLongCoords(t);
       const hasColor  = c.color !== undefined;
       const hasAnimFrameNum = c.sprite_frame_number !== undefined;
-      const hasSrcRect = c.source_rectangle !== undefined;
+      const hasSrcRect = c.source_rectangle != null;
 
       let raw = c.index & 0x3FF;
       const needsExtIndex = c.index >= 0x3FF;
@@ -256,10 +232,11 @@ function writeFrame(w: BinaryWriter, frame: RawFrameEnc, version: number): void 
       }
 
       if (hasSrcRect) {
-        w.writeI16(Math.round(c.source_rectangle![0] * 20));
-        w.writeI16(Math.round(c.source_rectangle![1] * 20));
-        w.writeI16(Math.round(c.source_rectangle![2] * 20));
-        w.writeI16(Math.round(c.source_rectangle![3] * 20));
+        const rect = c.source_rectangle!;
+        w.writeI16(Math.round(rect.position[0] * 20));
+        w.writeI16(Math.round(rect.position[1] * 20));
+        w.writeI16(Math.round(rect.size[0] * 20));
+        w.writeI16(Math.round(rect.size[1] * 20));
       }
 
       if (hasColor) {
@@ -295,20 +272,23 @@ interface RawSpriteEnc {
 
 function writeSprite(w: BinaryWriter, sprite: RawSpriteEnc, version: number): void {
   if (version >= 4) {
-    w.writeString(sprite.name || '');
+    if (sprite.name == null) throw new Error('PAM sprite.name is required for version 4+');
+    w.writeString(sprite.name);
   }
   if (version >= 6) {
     w.writeString('');
   }
   if (version >= 4) {
-    w.writeI32(Math.round((sprite.frame_rate ?? 0) * 65536));
+    if (sprite.frame_rate == null) throw new Error('PAM sprite.frame_rate is required for version 4+');
+    w.writeI32(Math.round(sprite.frame_rate * 65536));
   }
 
   const frames = sprite.frame || [];
   w.writeU16(frames.length);
 
   if (version >= 5) {
-    const wa = sprite.work_area || [0, frames.length];
+    if (!sprite.work_area) throw new Error('PAM sprite.work_area is required for version 5+');
+    const wa = sprite.work_area;
     w.writeI16(wa[0]);
     w.writeI16(wa[1]);
   }
@@ -318,7 +298,7 @@ function writeSprite(w: BinaryWriter, sprite: RawSpriteEnc, version: number): vo
   }
 }
 
-export function encodePAM(raw: RawPamJson): ArrayBuffer {
+function encodePAMFallback(raw: RawPamJson): ArrayBuffer {
   const w = new BinaryWriter();
   const version = raw.version ?? 6;
   if (version < 1 || version > 6) {
@@ -346,10 +326,8 @@ export function encodePAM(raw: RawPamJson): ArrayBuffer {
   }
 
   if (version <= 3) {
-    // v≤3: main sprite is always implicit — must write one.
-    // Use an empty default if raw.main_sprite is null/undefined.
-    const ms = raw.main_sprite || { frame: [] };
-    writeSprite(w, ms as unknown as RawSpriteEnc, version);
+    if (!raw.main_sprite) throw new Error('PAM main_sprite is required for version 1-3');
+    writeSprite(w, raw.main_sprite as unknown as RawSpriteEnc, version);
   } else {
     // v>3: has_main_sprite bool precedes the sprite.
     const ms = raw.main_sprite;
@@ -361,4 +339,17 @@ export function encodePAM(raw: RawPamJson): ArrayBuffer {
   }
 
   return w.toArrayBuffer();
+}
+
+export async function encodePAM(raw: RawPamJson): Promise<ArrayBuffer> {
+  try {
+    const wasm = await loadPamCodecWasm();
+    const bytes = wasm.encodePam(raw);
+    const copy = new Uint8Array(bytes.byteLength);
+    copy.set(bytes);
+    return copy.buffer;
+  } catch (error) {
+    console.warn('pam-codec wasm encode failed; falling back to TypeScript encoder.', error);
+    return encodePAMFallback(raw);
+  }
 }

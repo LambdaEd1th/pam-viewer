@@ -4,7 +4,10 @@
   "version": "1.0.0",
   "type": "module",
   "scripts": {
+    "build:wasm": "node scripts/build-pam-codec-wasm.mjs",
+    "predev": "npm run build:wasm",
     "dev": "vite",
+    "prebuild": "npm run build:wasm",
     "build": "tsc && vite build",
     "preview": "vite preview"
   },

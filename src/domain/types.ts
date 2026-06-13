@@ -46,12 +46,17 @@ export interface RawAppend {
   time_scale?: number;
 }
 
+export interface RawRectangle {
+  position: [number, number];
+  size: [number, number];
+}
+
 export interface RawChange {
   index: number;
   transform: number[];
   color?: [number, number, number, number];
   sprite_frame_number?: number;
-  source_rectangle?: [number, number, number, number];
+  source_rectangle?: RawRectangle | null;
 }
 
 // ── Internal (camelCase) normalized types ──
