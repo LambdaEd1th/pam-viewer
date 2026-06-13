@@ -175,6 +175,7 @@ const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as 
 const btnLoad = $<HTMLButtonElement>('btn-load');
 const btnClear = $<HTMLButtonElement>('btn-clear');
 const animName = $<HTMLSpanElement>('anim-name');
+const tabStrip = $<HTMLDivElement>('tab-strip');
 const animationTabsEl = $<HTMLDivElement>('animation-tabs');
 const spriteSelect = $<HTMLSelectElement>('sprite-select');
 const labelSelect = $<HTMLSelectElement>('label-select');
@@ -957,6 +958,7 @@ function resizeCanvas(): void {
   drawCurrentFrame();
 }
 window.addEventListener('resize', resizeCanvas);
+window.addEventListener('resize', syncTabStripPanelOffsets);
 
 // ── Hidden file input for fallback directory picking ──
 const fileInput = document.createElement('input');
@@ -1781,6 +1783,7 @@ sprRegexInput.addEventListener('input', () => applyRegexFilter(sprRegexInput, sp
 // ── Panel resize handles ──
 function setPanelWidth(panel: HTMLElement, width: number): void {
   panel.style.setProperty('--panel-width', `${clampPanelWidth(width)}px`);
+  syncTabStripPanelOffsets();
 }
 
 function readPanelWidth(panel: HTMLElement): number {
@@ -1788,6 +1791,17 @@ function readPanelWidth(panel: HTMLElement): number {
   if (Number.isFinite(value) && value > 0) return clampPanelWidth(value);
   const rectWidth = panel.getBoundingClientRect().width;
   return rectWidth > 0 ? clampPanelWidth(rectWidth) : 240;
+}
+
+function readVisiblePanelWidth(panel: HTMLElement): number {
+  if (panel.classList.contains('hidden')) return 0;
+  const rectWidth = panel.getBoundingClientRect().width;
+  return rectWidth > 0 ? Math.round(rectWidth) : readPanelWidth(panel);
+}
+
+function syncTabStripPanelOffsets(): void {
+  tabStrip.style.setProperty('--image-panel-tab-offset', `${readVisiblePanelWidth(panelImages)}px`);
+  tabStrip.style.setProperty('--sprite-panel-tab-offset', `${readVisiblePanelWidth(panelSprites)}px`);
 }
 
 function initResizeHandle(handle: HTMLElement, panel: HTMLElement, side: 'left' | 'right'): void {
@@ -1824,6 +1838,7 @@ function setPanelVisible(which: 'images' | 'sprites', visible: boolean): void {
   const btn = which === 'images' ? btnToggleImages : btnToggleSprites;
   panel.classList.toggle('hidden', !visible);
   btn.classList.toggle('active', visible);
+  syncTabStripPanelOffsets();
 }
 
 btnToggleImages.addEventListener('click', () => {
@@ -2203,6 +2218,7 @@ async function initApp(): Promise<void> {
   });
 
   loadSettings();
+  syncTabStripPanelOffsets();
   resizeCanvas();
 }
 

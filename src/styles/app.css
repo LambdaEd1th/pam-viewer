@@ -6,6 +6,7 @@
 
 :root {
   --color-scheme: dark;
+  --side-panel-tab-overlap: 36px;
   --color-bg: #15181d;
   --color-text: #cbd2da;
   --color-text-strong: #edf1f5;
@@ -561,11 +562,13 @@ input[type="checkbox"] {
   min-height: 36px;
   flex-shrink: 0;
   align-items: flex-end;
-  padding: 4px 10px 0;
+  padding: 4px calc(10px + var(--sprite-panel-tab-offset, 0px)) 0 calc(10px + var(--image-panel-tab-offset, 0px));
   border-bottom: 1px solid var(--color-border);
   background: var(--color-surface);
   overflow-x: auto;
   overflow-y: hidden;
+  scroll-padding-left: calc(10px + var(--image-panel-tab-offset, 0px));
+  scroll-padding-right: calc(10px + var(--sprite-panel-tab-offset, 0px));
 }
 
 .tab-strip.hidden {
@@ -646,12 +649,16 @@ input[type="checkbox"] {
   display: flex;
   min-height: 0;
   flex: 1;
-  overflow: hidden;
+  overflow: visible;
 }
 
 .filter-panel {
   display: flex;
+  position: relative;
+  z-index: 24;
+  top: calc(-1 * var(--side-panel-tab-overlap));
   width: var(--panel-width, 240px);
+  height: calc(100% + var(--side-panel-tab-overlap));
   min-width: 144px;
   max-width: 500px;
   flex-shrink: 0;
@@ -723,8 +730,10 @@ input[type="checkbox"] {
 
 .resize-handle {
   position: relative;
-  z-index: 10;
+  z-index: 25;
+  top: calc(-1 * var(--side-panel-tab-overlap));
   width: 6px;
+  height: calc(100% + var(--side-panel-tab-overlap));
   flex-shrink: 0;
   background: var(--color-bg);
   cursor: col-resize;
@@ -1085,8 +1094,9 @@ input[type="checkbox"] {
   .filter-panel {
     position: absolute;
     z-index: 20;
-    top: 0;
+    top: calc(-1 * var(--side-panel-tab-overlap));
     bottom: 0;
+    height: auto;
     width: min(42vw, 150px);
     min-width: 112px;
     max-width: 150px;
