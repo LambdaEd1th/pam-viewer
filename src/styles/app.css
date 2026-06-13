@@ -148,17 +148,21 @@ input[type="text"] {
 }
 
 select {
-  min-width: 86px;
-  max-width: 200px;
+  width: auto;
+  min-width: 8ch;
+  max-width: min(36ch, 70vw);
   height: 28px;
   padding: 0 24px 0 8px;
+  field-sizing: content;
 }
 
 input[type="number"] {
-  width: 68px;
-  min-width: 8ch;
+  width: auto;
+  min-width: 5.5ch;
+  max-width: min(14ch, 46vw);
   height: 28px;
   padding: 0 6px;
+  field-sizing: content;
   font-variant-numeric: tabular-nums;
   text-align: right;
   appearance: textfield;
@@ -173,8 +177,12 @@ input[type="number"]::-webkit-outer-spin-button {
 }
 
 input[type="text"] {
+  width: auto;
+  min-width: 12ch;
+  max-width: min(36ch, 70vw);
   height: 28px;
   padding: 0 8px;
+  field-sizing: content;
 }
 
 input[type="checkbox"] {
@@ -215,54 +223,16 @@ input[type="checkbox"] {
 .toolbar-group {
   display: flex;
   min-width: 0;
+  max-width: 100%;
   min-height: 36px;
   align-items: center;
   gap: 6px;
-  flex-wrap: nowrap;
+  flex: 0 1 max-content;
+  flex-wrap: wrap;
   padding: 4px 6px;
   border: 1px solid var(--color-border);
   border-radius: 6px;
   background: var(--color-surface-soft);
-}
-
-.toolbar-group-file {
-  flex: 1 1 280px;
-}
-
-.toolbar-group-selectors {
-  flex: 1 1 500px;
-  flex-wrap: wrap;
-}
-
-.toolbar-group-playback {
-  flex: 1 1 430px;
-  flex-wrap: wrap;
-}
-
-.toolbar-group-speed {
-  flex: 1 1 470px;
-  flex-wrap: wrap;
-}
-
-.toolbar-group-layers {
-  flex: 1 1 380px;
-  flex-wrap: wrap;
-}
-
-.toolbar-group-view {
-  flex: 0 1 auto;
-  flex-wrap: wrap;
-}
-
-.toolbar-group-size {
-  flex: 0 1 auto;
-  flex-wrap: wrap;
-}
-
-.toolbar-group-export,
-.toolbar-group-convert,
-.toolbar-group-prefs {
-  flex: 0 1 auto;
 }
 
 #toolbar button {
@@ -366,14 +336,15 @@ input[type="checkbox"] {
 }
 
 .select-control {
-  width: 100px;
-  max-width: min(172px, 24vw);
+  width: max-content;
+  min-width: 8ch;
+  max-width: min(36ch, 70vw);
   cursor: pointer;
 }
 
 .toolbar-group-selectors .select-control {
-  width: clamp(200px, 20vw, 260px);
-  max-width: min(260px, 62vw);
+  min-width: 240px;
+  max-width: min(420px, 70vw);
 }
 
 .speed-control:focus-within,
@@ -418,12 +389,13 @@ input[type="checkbox"] {
 }
 
 .select-control-small {
-  width: 68px;
+  min-width: 68px;
+  max-width: min(12ch, 36vw);
 }
 
 .select-control-value {
   min-width: 0;
-  flex: 1;
+  flex: 0 1 auto;
   overflow: hidden;
   padding: 0 0 0 8px;
   color: var(--color-text-strong);
@@ -446,8 +418,9 @@ input[type="checkbox"] {
 }
 
 .speed-control #speed-input {
-  width: 54px;
-  min-width: 6.5ch;
+  width: auto;
+  min-width: 4ch;
+  max-width: 8ch;
   height: 100%;
   padding: 0 5px;
   border: 0;
@@ -489,8 +462,9 @@ input[type="checkbox"] {
 
 .size-label input[type="number"],
 .frame-range-label input[type="number"] {
-  width: 72px;
-  min-width: 8.5ch;
+  width: auto;
+  min-width: 5.5ch;
+  max-width: 10ch;
 }
 
 .size-label select {
@@ -763,6 +737,7 @@ input[type="checkbox"] {
 
 .panel-filter-row input {
   width: 100%;
+  max-width: none;
 }
 
 .panel-filter-row input::placeholder {
@@ -1086,13 +1061,6 @@ input[type="checkbox"] {
     overflow-y: auto;
   }
 
-  .toolbar-group-selectors,
-  .toolbar-group-playback,
-  .toolbar-group-speed,
-  .toolbar-group-layers {
-    flex-basis: 100%;
-  }
-
   #frame-slider {
     width: clamp(120px, 30vw, 220px);
   }
@@ -1113,19 +1081,9 @@ input[type="checkbox"] {
   }
 
   .toolbar-group {
-    flex-basis: 100%;
     flex-wrap: wrap;
     min-height: 34px;
     padding: 4px 5px;
-  }
-
-  .toolbar-group-file,
-  .toolbar-group-view,
-  .toolbar-group-size,
-  .toolbar-group-export,
-  .toolbar-group-convert,
-  .toolbar-group-prefs {
-    flex: 1 1 100%;
   }
 
   #toolbar button,
