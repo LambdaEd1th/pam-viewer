@@ -2,8 +2,8 @@ type MessageDict = Record<string, string>;
 
 const messages: Record<string, MessageDict> = {
   'zh-CN': {
-    'btn.load': '📂 加载',
-    'btn.clear': '✕ 清除',
+    'btn.load': '加载',
+    'btn.clear': '清除',
     'btn.load.title': '加载动画文件夹',
     'btn.clear.title': '清除动画',
     'anim.unloaded': '未加载',
@@ -63,7 +63,7 @@ const messages: Record<string, MessageDict> = {
     'filter.sprite.title': '输入正则表达式过滤 Sprite',
     'sprite.activate.title': '激活此 Sprite',
     'sprite.activateMain.title': '激活 MainSprite',
-    'status.hint': '拖放包含 .pam.json 和 PNG 的文件夹到画布区域，或点击 📂 加载',
+    'status.hint': '拖放包含 .pam.json 和 PNG 的文件夹到画布区域，或点击加载',
     'status.noFiles': '未检测到文件',
     'status.loading': '加载中…',
     'status.noPam': '未找到 .pam / .pam.json / .yaml / .toml / .fla 文件',
@@ -83,8 +83,8 @@ const messages: Record<string, MessageDict> = {
   },
 
   'en': {
-    'btn.load': '📂 Load',
-    'btn.clear': '✕ Clear',
+    'btn.load': 'Load',
+    'btn.clear': 'Clear',
     'btn.load.title': 'Load animation folder',
     'btn.clear.title': 'Clear animation',
     'anim.unloaded': 'No animation',
@@ -144,7 +144,7 @@ const messages: Record<string, MessageDict> = {
     'filter.sprite.title': 'Regex filter for sprites',
     'sprite.activate.title': 'Activate this sprite',
     'sprite.activateMain.title': 'Activate MainSprite',
-    'status.hint': 'Drop a folder with .pam.json and PNGs onto the canvas, or click 📂 Load',
+    'status.hint': 'Drop a folder with .pam.json and PNGs onto the canvas, or click Load',
     'status.noFiles': 'No files detected',
     'status.loading': 'Loading…',
     'status.noPam': 'No .pam / .pam.json / .yaml / .toml / .fla file found',
@@ -196,8 +196,12 @@ export function setLang(lang: string): void {
   for (const cb of changeCallbacks) cb(lang);
 }
 
-export function onLangChange(cb: (lang: string) => void): void {
+export function onLangChange(cb: (lang: string) => void): () => void {
   changeCallbacks.push(cb);
+  return () => {
+    const index = changeCallbacks.indexOf(cb);
+    if (index !== -1) changeCallbacks.splice(index, 1);
+  };
 }
 
 export function getAvailableLangs(): string[] {

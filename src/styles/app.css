@@ -239,6 +239,61 @@ input[type="checkbox"] {
   accent-color: var(--color-accent);
 }
 
+.viewer-checkbox {
+  position: relative;
+  cursor: pointer;
+  user-select: none;
+}
+
+.viewer-checkbox input[type="checkbox"] {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: 0;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.viewer-checkbox-box {
+  display: inline-flex;
+  width: 16px;
+  height: 16px;
+  flex: 0 0 16px;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--color-border-strong);
+  border-radius: 4px;
+  background: var(--color-control);
+  color: transparent;
+  transition: background 120ms ease, border-color 120ms ease, color 120ms ease;
+}
+
+.viewer-checkbox-box svg {
+  width: 12px;
+  height: 12px;
+  stroke-width: 3;
+}
+
+.viewer-checkbox input[type="checkbox"]:checked + .viewer-checkbox-box {
+  border-color: var(--color-accent-border);
+  background: var(--color-accent);
+  color: var(--color-accent-contrast);
+}
+
+.viewer-checkbox input[type="checkbox"]:focus-visible + .viewer-checkbox-box {
+  outline: 2px solid var(--color-focus);
+  outline-offset: 1px;
+}
+
+.viewer-checkbox:has(input[type="checkbox"]:disabled) {
+  cursor: default;
+  opacity: 0.46;
+}
+
+.viewer-checkbox-label {
+  color: inherit;
+}
+
 #app {
   display: flex;
   min-width: 0;
@@ -332,6 +387,15 @@ input[type="checkbox"] {
 #toolbar .btn-play {
   border-color: rgba(73, 201, 189, 0.55);
   color: var(--color-accent-text);
+}
+
+#toolbar .btn-play .pause-icon,
+#toolbar .btn-play[data-playing="true"] .play-icon {
+  display: none;
+}
+
+#toolbar .btn-play[data-playing="true"] .pause-icon {
+  display: block;
 }
 
 #toolbar label {
@@ -872,6 +936,12 @@ input[type="checkbox"] {
   object-fit: contain;
 }
 
+.filter-list .sprite-spacer {
+  display: inline-block;
+  width: 18px;
+  flex-shrink: 0;
+}
+
 /* Stage */
 #stage-container {
   display: flex;
@@ -932,6 +1002,11 @@ input[type="checkbox"] {
   color: var(--color-accent-text);
   font-size: 48px;
   opacity: 0.66;
+}
+
+.drop-hint-icon svg {
+  width: 48px;
+  height: 48px;
 }
 
 .drop-hint-text {

@@ -84,12 +84,19 @@ Re-importing the FLA restores the original PAM data via the sidecar, so you can 
 
 ```
 src/
-  main.ts                  App bootstrap
+  main.tsx                 React/Vite bootstrap
+  App.tsx                  Viewer shell mount point
   app/
-    main.ts                UI controller and app state
+    controller.ts          Pixi/app state controller behind the React bridge
+    viewer-bridge.ts       React/controller snapshot stores and command actions
+    viewer-controller.ts   Lazy controller mount helper
+    viewer-dom.ts          DOM refs needed by the Pixi viewport bridge
     files.ts               Drag/drop, directory walking, image loading
     load-animation.ts      PAM/FLA/XFL loading + texture resolution
     special-layers.ts      PvZ2-specific layer defaults
+  components/
+    ui/                    shadcn/ui-compatible primitives
+    viewer/                React toolbar, panels, stage, tabs, status, overlay
   domain/
     types.ts               Shared TypeScript type definitions
     model.ts               Data parsing, matrix math, colour blending
@@ -113,6 +120,7 @@ src/
     download.ts            Browser download + export naming helpers
   localization/
     i18n.ts                Internationalisation (zh-CN / en)
+    use-i18n.ts            React language hook
   styles/
     app.css                Stylesheet
 wasm/
@@ -122,7 +130,8 @@ wasm/
 ## Tech Stack
 
 - **TypeScript** (strict mode, ES2022 target)
-- **Vite** (dev server + bundler)
+- **React + Vite** (dev server + bundler)
+- **Tailwind CSS + shadcn/ui-compatible primitives**
 - **js-yaml** / **smol-toml** for alternate format export
 - PixiJS v8 rendering
 

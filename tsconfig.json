@@ -11,6 +11,9 @@
     "skipLibCheck": true,
     "esModuleInterop": true,
     "jsx": "react-jsx",
+    "paths": {
+      "@/*": ["./src/*"]
+    },
     "lib": ["ES2022", "DOM", "DOM.Iterable"],
     "rootDir": ".",
     "outDir": "./dist"
