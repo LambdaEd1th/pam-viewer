@@ -446,7 +446,7 @@ function createAnimationTab(loadedAnimation: LoadedAnimation): AnimationTab {
     zombieStateLayers,
     groundSwatchLayers,
     defaultHiddenLayers,
-  } = getSpecialLayerIndices(loadedAnimation.animation);
+  } = getSpecialLayerIndices(loadedAnimation.animation, loadedAnimation.displayName);
   const spriteFilter = loadedAnimation.animation.sprite.map(() => true);
   for (const idx of [...defaultHiddenLayers, ...zombieStateLayers]) {
     spriteFilter[idx] = false;
@@ -771,9 +771,28 @@ function closeAnimationTab(tabId: number): void {
   }
 }
 
+function moveAnimationTab(tabId: number, targetTabId: number, placement: 'before' | 'after'): void {
+  if (tabId === targetTabId || tabStates.length < 2) return;
+
+  const sourceIndex = tabStates.findIndex(tab => tab.id === tabId);
+  if (sourceIndex === -1) return;
+
+  const [tab] = tabStates.splice(sourceIndex, 1);
+  const targetIndex = tabStates.findIndex(candidate => candidate.id === targetTabId);
+  if (targetIndex === -1) {
+    tabStates.splice(sourceIndex, 0, tab);
+    return;
+  }
+
+  const insertIndex = placement === 'after' ? targetIndex + 1 : targetIndex;
+  tabStates.splice(insertIndex, 0, tab);
+  renderTabs();
+}
+
 const unsetViewerTabActions = setViewerTabActions({
   activateTab: activateAnimationTab,
   closeTab: closeAnimationTab,
+  moveTab: moveAnimationTab,
 });
 
 // ── i18n setup ──

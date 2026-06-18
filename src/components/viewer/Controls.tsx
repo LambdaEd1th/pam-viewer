@@ -2,17 +2,19 @@ import { Children, Fragment, isValidElement, useCallback, useEffect, useLayoutEf
 import type { ChangeEvent, ComponentProps, InputHTMLAttributes, KeyboardEvent, OptionHTMLAttributes, ReactNode, SelectHTMLAttributes } from 'react';
 import { createPortal } from 'react-dom';
 import { Check } from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { cn } from '@/lib/utils';
 
-type ViewerButtonProps = ComponentProps<typeof Button>;
+type ClassNameValue = string | false | null | undefined;
 
-export function ViewerButton({ className, variant = 'secondary', size = 'sm', ...props }: ViewerButtonProps) {
+function cn(...values: ClassNameValue[]): string {
+  return values.filter(Boolean).join(' ');
+}
+
+type ViewerButtonProps = ComponentProps<'button'>;
+
+export function ViewerButton({ className, ...props }: ViewerButtonProps) {
   return (
-    <Button
-      variant={variant}
-      size={size}
+    <button
+      type="button"
       className={cn('viewer-button', className)}
       {...props}
     />
@@ -276,8 +278,8 @@ export function ViewerCheckbox({
   );
 }
 
-type ViewerInputProps = ComponentProps<typeof Input>;
+type ViewerInputProps = ComponentProps<'input'>;
 
 export function ViewerInput({ className, ...props }: ViewerInputProps) {
-  return <Input className={cn('viewer-input', className)} {...props} />;
+  return <input className={cn('viewer-input', className)} {...props} />;
 }

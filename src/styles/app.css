@@ -1,32 +1,4 @@
 @import "tailwindcss";
-@import "tw-animate-css";
-
-@custom-variant dark (&:is(.dark *));
-
-@theme inline {
-  --radius-sm: calc(var(--radius) - 4px);
-  --radius-md: calc(var(--radius) - 2px);
-  --radius-lg: var(--radius);
-  --radius-xl: calc(var(--radius) + 4px);
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --color-card: var(--card);
-  --color-card-foreground: var(--card-foreground);
-  --color-popover: var(--popover);
-  --color-popover-foreground: var(--popover-foreground);
-  --color-primary: var(--primary);
-  --color-primary-foreground: var(--primary-foreground);
-  --color-secondary: var(--secondary);
-  --color-secondary-foreground: var(--secondary-foreground);
-  --color-muted: var(--muted);
-  --color-muted-foreground: var(--muted-foreground);
-  --color-accent: var(--accent);
-  --color-accent-foreground: var(--accent-foreground);
-  --color-destructive: var(--destructive);
-  --color-border: var(--border);
-  --color-input: var(--input);
-  --color-ring: var(--ring);
-}
 
 * {
   box-sizing: border-box;
@@ -37,7 +9,6 @@
 :root {
   --color-scheme: dark;
   --side-panel-tab-overlap: 36px;
-  --radius: 0.5rem;
   --color-bg: #15181d;
   --color-text: #cbd2da;
   --color-text-strong: #edf1f5;
@@ -77,24 +48,6 @@
   --color-error-bg: #3a2427;
   --color-danger: #d33f49;
   --color-danger-border: #f1636c;
-  --background: var(--color-bg);
-  --foreground: var(--color-text);
-  --card: var(--color-surface);
-  --card-foreground: var(--color-text);
-  --popover: var(--color-surface-raised);
-  --popover-foreground: var(--color-text-strong);
-  --primary: var(--color-accent);
-  --primary-foreground: var(--color-accent-contrast);
-  --secondary: var(--color-control);
-  --secondary-foreground: var(--color-text-strong);
-  --muted: var(--color-surface-soft);
-  --muted-foreground: var(--color-text-muted);
-  --accent: var(--color-control-active);
-  --accent-foreground: var(--color-accent-text);
-  --destructive: var(--color-danger);
-  --border: var(--color-border);
-  --input: var(--color-border-strong);
-  --ring: var(--color-focus);
   color-scheme: var(--color-scheme);
 }
 
@@ -325,6 +278,15 @@ input[type="checkbox"] {
   flex-wrap: wrap;
 }
 
+.toolbar-group-shell {
+  display: flex;
+  position: relative;
+  min-width: 0;
+  max-width: 100%;
+  flex: 0 1 max-content;
+  align-items: stretch;
+}
+
 .toolbar-group {
   display: flex;
   min-width: 0;
@@ -340,6 +302,41 @@ input[type="checkbox"] {
   background: var(--color-surface-soft);
 }
 
+.toolbar-group-shell > .toolbar-group {
+  flex: 1 1 auto;
+  border-top-left-radius: 0;
+  border-bottom-left-radius: 0;
+  border-left: 0;
+}
+
+.toolbar-group-shell.dragging {
+  opacity: 0.58;
+}
+
+.toolbar-group-shell.dragging .toolbar-group-drag-handle {
+  cursor: grabbing;
+}
+
+.toolbar-group-shell.drop-before::before,
+.toolbar-group-shell.drop-after::after {
+  position: absolute;
+  z-index: 2;
+  top: 3px;
+  bottom: 3px;
+  width: 2px;
+  border-radius: 999px;
+  background: var(--color-accent-border);
+  content: "";
+}
+
+.toolbar-group-shell.drop-before::before {
+  left: -3px;
+}
+
+.toolbar-group-shell.drop-after::after {
+  right: -3px;
+}
+
 #toolbar button {
   display: inline-flex;
   min-width: 0;
@@ -349,6 +346,52 @@ input[type="checkbox"] {
   gap: 4px;
   padding: 0 10px;
   white-space: nowrap;
+}
+
+#toolbar .toolbar-group-drag-handle {
+  width: 18px;
+  min-width: 18px;
+  height: auto;
+  min-height: 36px;
+  align-self: stretch;
+  flex: 0 0 18px;
+  padding: 0;
+  border-color: var(--color-border);
+  border-right: 0;
+  border-radius: 6px 0 0 6px;
+  background: var(--color-surface-soft);
+  color: var(--color-text-subtle);
+  cursor: grab;
+  touch-action: none;
+}
+
+#toolbar .toolbar-group-drag-handle:hover {
+  background: var(--color-control-hover);
+  color: var(--color-text-strong);
+}
+
+#toolbar .toolbar-group-drag-handle svg {
+  width: 14px;
+  height: 14px;
+  flex: 0 0 14px;
+  pointer-events: none;
+}
+
+.viewer-button {
+  display: inline-flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.viewer-button svg {
+  width: 16px;
+  height: 16px;
+  flex: 0 0 16px;
+  pointer-events: none;
 }
 
 #toolbar .btn-primary {
@@ -697,6 +740,7 @@ input[type="checkbox"] {
 
 .animation-tab {
   display: flex;
+  position: relative;
   width: 180px;
   max-width: 240px;
   min-width: 104px;
@@ -708,10 +752,38 @@ input[type="checkbox"] {
   border-radius: 6px 6px 0 0;
   background: var(--color-control);
   color: var(--color-text);
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
 }
 
 .animation-tab:hover {
   background: var(--color-control-hover);
+}
+
+.animation-tab.dragging {
+  opacity: 0.58;
+  cursor: grabbing;
+}
+
+.animation-tab.drop-before::before,
+.animation-tab.drop-after::after {
+  position: absolute;
+  z-index: 1;
+  top: 5px;
+  bottom: 5px;
+  width: 2px;
+  border-radius: 999px;
+  background: var(--color-accent-border);
+  content: "";
+}
+
+.animation-tab.drop-before::before {
+  left: 2px;
+}
+
+.animation-tab.drop-after::after {
+  right: 2px;
 }
 
 .animation-tab.active {

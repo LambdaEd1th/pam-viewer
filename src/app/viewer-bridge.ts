@@ -120,6 +120,7 @@ export interface ViewerFormSnapshot {
 interface ViewerTabActions {
   activateTab: (id: number) => void;
   closeTab: (id: number) => void;
+  moveTab: (id: number, targetId: number, placement: 'before' | 'after') => void;
 }
 
 interface ViewerPanelActions {
@@ -274,6 +275,7 @@ let formSnapshot: ViewerFormSnapshot = {
 let tabActions: ViewerTabActions = {
   activateTab: () => undefined,
   closeTab: () => undefined,
+  moveTab: () => undefined,
 };
 let panelActions: ViewerPanelActions = {
   setImageChecked: () => undefined,
@@ -466,6 +468,7 @@ export function setViewerTabActions(actions: ViewerTabActions): () => void {
     tabActions = {
       activateTab: () => undefined,
       closeTab: () => undefined,
+      moveTab: () => undefined,
     };
   };
 }
@@ -575,6 +578,10 @@ export function activateViewerTab(id: number): void {
 
 export function closeViewerTab(id: number): void {
   tabActions.closeTab(id);
+}
+
+export function moveViewerTab(id: number, targetId: number, placement: 'before' | 'after'): void {
+  tabActions.moveTab(id, targetId, placement);
 }
 
 export function setViewerImageChecked(index: number, checked: boolean): void {
