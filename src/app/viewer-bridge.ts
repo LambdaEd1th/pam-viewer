@@ -23,6 +23,13 @@ export interface ViewerChromeSnapshot {
   spritesPanelVisible: boolean;
 }
 
+export interface ViewerLayoutSnapshot {
+  imagesPanelVisible: boolean;
+  spritesPanelVisible: boolean;
+  imagePanelWidth: number;
+  spritePanelWidth: number;
+}
+
 export interface ViewerExportSnapshot {
   visible: boolean;
   title: string;
@@ -212,6 +219,12 @@ let chromeSnapshot: ViewerChromeSnapshot = {
   imagesPanelVisible: true,
   spritesPanelVisible: true,
 };
+let layoutSnapshot: ViewerLayoutSnapshot = {
+  imagesPanelVisible: true,
+  spritesPanelVisible: true,
+  imagePanelWidth: 240,
+  spritePanelWidth: 240,
+};
 let exportSnapshot: ViewerExportSnapshot = {
   visible: false,
   title: '',
@@ -349,6 +362,7 @@ let formActions: ViewerFormActions = {
 
 const tabListeners = new Set<() => void>();
 const chromeListeners = new Set<() => void>();
+const layoutListeners = new Set<() => void>();
 const exportListeners = new Set<() => void>();
 const playbackListeners = new Set<() => void>();
 const commandListeners = new Set<() => void>();
@@ -390,6 +404,20 @@ export function getViewerChromeSnapshot(): ViewerChromeSnapshot {
 export function subscribeViewerChrome(listener: () => void): () => void {
   chromeListeners.add(listener);
   return () => chromeListeners.delete(listener);
+}
+
+export function publishViewerLayout(next: Partial<ViewerLayoutSnapshot>): void {
+  layoutSnapshot = { ...layoutSnapshot, ...next };
+  for (const listener of layoutListeners) listener();
+}
+
+export function getViewerLayoutSnapshot(): ViewerLayoutSnapshot {
+  return layoutSnapshot;
+}
+
+export function subscribeViewerLayout(listener: () => void): () => void {
+  layoutListeners.add(listener);
+  return () => layoutListeners.delete(listener);
 }
 
 export function publishViewerExport(next: Partial<ViewerExportSnapshot>): void {

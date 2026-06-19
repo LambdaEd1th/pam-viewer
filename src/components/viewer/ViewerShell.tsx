@@ -1,9 +1,12 @@
-import { useEffect } from 'react';
+import { useEffect, useSyncExternalStore } from 'react';
+import type { CSSProperties } from 'react';
 import {
+  getViewerLayoutSnapshot,
   nextViewerFrame,
   previousViewerFrame,
   resizeViewerViewport,
   resetViewerZoom,
+  subscribeViewerLayout,
   toggleViewerPlayback,
   zoomViewerIn,
   zoomViewerOut,
@@ -15,6 +18,21 @@ import { Toolbar } from './Toolbar';
 import { Workspace } from './Workspace';
 
 export function ViewerShell() {
+  const {
+    imagesPanelVisible,
+    spritesPanelVisible,
+    imagePanelWidth,
+    spritePanelWidth,
+  } = useSyncExternalStore(
+    subscribeViewerLayout,
+    getViewerLayoutSnapshot,
+    getViewerLayoutSnapshot,
+  );
+  const layoutStyle = {
+    '--image-panel-width': `${imagePanelWidth}px`,
+    '--sprite-panel-width': `${spritePanelWidth}px`,
+  } as CSSProperties;
+
   useEffect(() => {
     const handleResize = () => resizeViewerViewport();
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -62,7 +80,12 @@ export function ViewerShell() {
   }, []);
 
   return (
-    <div id="app">
+    <div
+      id="app"
+      data-images-panel={imagesPanelVisible ? 'open' : 'closed'}
+      data-sprites-panel={spritesPanelVisible ? 'open' : 'closed'}
+      style={layoutStyle}
+    >
       <Toolbar />
       <TabStrip />
       <ExportOverlay />

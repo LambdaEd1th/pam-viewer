@@ -95,7 +95,6 @@ src/
     load-animation.ts      PAM/FLA/XFL loading + texture resolution
     special-layers.ts      PvZ2-specific layer defaults
   components/
-    ui/                    shadcn/ui-compatible primitives
     viewer/                React toolbar, panels, stage, tabs, status, overlay
   domain/
     types.ts               Shared TypeScript type definitions
@@ -131,7 +130,7 @@ wasm/
 
 - **TypeScript** (strict mode, ES2022 target)
 - **React + Vite** (dev server + bundler)
-- **Tailwind CSS + shadcn/ui-compatible primitives**
+- **Tailwind CSS** with project-local viewer controls
 - **js-yaml** / **smol-toml** for alternate format export
 - PixiJS v8 rendering
 

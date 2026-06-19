@@ -22,6 +22,7 @@ import {
   publishViewerCommand,
   publishViewerExport,
   publishViewerForm,
+  publishViewerLayout,
   publishViewerPanels,
   publishViewerPlayback,
   publishViewerTabs,
@@ -175,8 +176,8 @@ function loadSettings(): void {
   if (typeof s.keepSpeed === 'boolean') keepSpeedChecked = s.keepSpeed;
   if (isPositiveNumericString(s.speedValue)) speedValue = s.speedValue;
   if (typeof s.sizeScale === 'string' && ['custom', '1', '2', '3', '4'].includes(s.sizeScale)) sizeScaleValue = s.sizeScale;
-  if (isPositiveNumber(s.imagePanelWidth)) setPanelWidth(panelImages, s.imagePanelWidth);
-  if (isPositiveNumber(s.spritePanelWidth)) setPanelWidth(panelSprites, s.spritePanelWidth);
+  if (isPositiveNumber(s.imagePanelWidth)) setPanelWidth('images', s.imagePanelWidth);
+  if (isPositiveNumber(s.spritePanelWidth)) setPanelWidth('sprites', s.spritePanelWidth);
   if (typeof s.showImages === 'boolean') setPanelVisible('images', s.showImages);
   if (typeof s.showSprites === 'boolean') setPanelVisible('sprites', s.showSprites);
   if (isThemePreference(s.theme)) {
@@ -196,8 +197,8 @@ function saveSettings(): void {
       keepSpeed: keepSpeedChecked,
       speedValue,
       sizeScale: sizeScaleValue,
-      imagePanelWidth: readPanelWidth(panelImages),
-      spritePanelWidth: readPanelWidth(panelSprites),
+      imagePanelWidth: readPanelWidth('images'),
+      spritePanelWidth: readPanelWidth('sprites'),
       showImages: imagesPanelVisible,
       showSprites: spritesPanelVisible,
     }));
@@ -207,11 +208,8 @@ function saveSettings(): void {
 }
 
 const {
-  tabStrip,
   stageContainer,
   canvas,
-  panelImages,
-  panelSprites,
 } = await waitForViewerDomRefs();
 
 // ── State ──
@@ -406,6 +404,8 @@ let imageRegex = '';
 let spriteRegex = '';
 let imagesPanelVisible = true;
 let spritesPanelVisible = true;
+let imagePanelWidth = 240;
+let spritePanelWidth = 240;
 let speedValue = getStoredSpeedValue() ?? '30';
 let loopChecked = true;
 let reverseChecked = false;
@@ -848,7 +848,6 @@ function resizeCanvas(): void {
 }
 function resizeViewport(): void {
   resizeCanvas();
-  syncTabStripPanelOffsets();
 }
 
 async function loadFilesFromUi(files: File[]): Promise<void> {
@@ -1571,50 +1570,50 @@ function setGroundSwatchValue(show: boolean): void {
 }
 
 // ── Panel resize handles ──
-function setPanelWidth(panel: HTMLElement, width: number): void {
-  panel.style.setProperty('--panel-width', `${clampPanelWidth(width)}px`);
-  syncTabStripPanelOffsets();
+function publishPanelLayout(): void {
+  const layout = {
+    imagesPanelVisible,
+    spritesPanelVisible,
+    imagePanelWidth,
+    spritePanelWidth,
+  };
+  publishViewerLayout(layout);
+  publishViewerChrome({
+    imagesPanelVisible,
+    spritesPanelVisible,
+  });
 }
 
-function readPanelWidth(panel: HTMLElement): number {
-  const value = parseFloat(panel.style.getPropertyValue('--panel-width'));
-  if (Number.isFinite(value) && value > 0) return clampPanelWidth(value);
-  const rectWidth = panel.getBoundingClientRect().width;
-  return rectWidth > 0 ? clampPanelWidth(rectWidth) : 240;
+function setPanelWidth(which: 'images' | 'sprites', width: number): void {
+  if (which === 'images') {
+    imagePanelWidth = clampPanelWidth(width);
+  } else {
+    spritePanelWidth = clampPanelWidth(width);
+  }
+  publishPanelLayout();
 }
 
-function readVisiblePanelWidth(panel: HTMLElement): number {
-  if (panel === panelImages && !imagesPanelVisible) return 0;
-  if (panel === panelSprites && !spritesPanelVisible) return 0;
-  const rectWidth = panel.getBoundingClientRect().width;
-  return rectWidth > 0 ? Math.round(rectWidth) : readPanelWidth(panel);
-}
-
-function syncTabStripPanelOffsets(): void {
-  tabStrip.style.setProperty('--image-panel-tab-offset', `${readVisiblePanelWidth(panelImages)}px`);
-  tabStrip.style.setProperty('--sprite-panel-tab-offset', `${readVisiblePanelWidth(panelSprites)}px`);
+function readPanelWidth(which: 'images' | 'sprites'): number {
+  return which === 'images' ? imagePanelWidth : spritePanelWidth;
 }
 
 let panelResizeState: {
-  panel: HTMLElement;
-  side: 'left' | 'right';
+  panel: 'images' | 'sprites';
   startX: number;
   startWidth: number;
 } | null = null;
 
 function beginPanelResize(which: 'images' | 'sprites', clientX: number): void {
-  const panel = which === 'images' ? panelImages : panelSprites;
   panelResizeState = {
-    panel,
-    side: which === 'images' ? 'left' : 'right',
+    panel: which,
     startX: clientX,
-    startWidth: panel.getBoundingClientRect().width,
+    startWidth: readPanelWidth(which),
   };
 }
 
 function resizePanel(clientX: number): void {
   if (!panelResizeState) return;
-  const delta = panelResizeState.side === 'left'
+  const delta = panelResizeState.panel === 'images'
     ? clientX - panelResizeState.startX
     : panelResizeState.startX - clientX;
   setPanelWidth(panelResizeState.panel, panelResizeState.startWidth + delta);
@@ -1633,11 +1632,7 @@ function setPanelVisible(which: 'images' | 'sprites', visible: boolean): void {
   } else {
     spritesPanelVisible = visible;
   }
-  publishViewerChrome({
-    imagesPanelVisible,
-    spritesPanelVisible,
-  });
-  syncTabStripPanelOffsets();
+  publishPanelLayout();
 }
 
 function toggleImagesPanel(): void {
@@ -2009,8 +2004,8 @@ async function initApp(): Promise<void> {
   });
 
   loadSettings();
+  publishPanelLayout();
   renderEmptyAnimationState();
-  syncTabStripPanelOffsets();
   resizeCanvas();
 }
 

@@ -12,16 +12,22 @@ import { StageView } from './StageView';
 interface ResizeHandleProps {
   id: string;
   panel: 'images' | 'sprites';
+  hidden: boolean;
 }
 
-function ResizeHandle({ id, panel }: ResizeHandleProps) {
+function ResizeHandle({ id, panel, hidden }: ResizeHandleProps) {
   const [dragging, setDragging] = useState(false);
 
   return (
     <div
       id={id}
-      className={`resize-handle${dragging ? ' dragging' : ''}`}
+      className={[
+        'resize-handle',
+        hidden ? 'hidden' : '',
+        dragging ? 'dragging' : '',
+      ].filter(Boolean).join(' ')}
       onPointerDown={(event) => {
+        if (hidden) return;
         event.preventDefault();
         setDragging(true);
         event.currentTarget.setPointerCapture(event.pointerId);
@@ -65,9 +71,9 @@ export function Workspace() {
         domRefName="panelImages"
         hidden={!imagesPanelVisible}
       />
-      <ResizeHandle id="resize-handle-left" panel="images" />
+      <ResizeHandle id="resize-handle-left" panel="images" hidden={!imagesPanelVisible} />
       <StageView />
-      <ResizeHandle id="resize-handle-right" panel="sprites" />
+      <ResizeHandle id="resize-handle-right" panel="sprites" hidden={!spritesPanelVisible} />
       <SidePanel
         id="panel-sprites"
         titleKey="panel.sprites"
