@@ -9,6 +9,8 @@
 :root {
   --color-scheme: dark;
   --side-panel-tab-overlap: 36px;
+  --tab-scrollbar-gutter: 8px;
+  --tab-strip-overlap: calc(var(--side-panel-tab-overlap) + var(--tab-scrollbar-gutter));
   --color-bg: #15181d;
   --color-text: #cbd2da;
   --color-text-strong: #edf1f5;
@@ -740,7 +742,7 @@ input[type="checkbox"] {
     minmax(0, 1fr)
     var(--sprite-panel-handle-track)
     var(--sprite-panel-track);
-  min-height: 36px;
+  min-height: var(--tab-strip-overlap);
   flex-shrink: 0;
   border-bottom: 1px solid var(--color-border);
   background: var(--color-surface);
@@ -756,12 +758,13 @@ input[type="checkbox"] {
   position: relative;
   z-index: 1;
   grid-column: 3;
+  height: var(--tab-strip-overlap);
   min-width: 0;
   max-width: 100%;
-  align-items: flex-end;
+  align-items: flex-start;
   gap: 3px;
-  padding: 4px 10px 0;
-  overflow-x: auto;
+  padding: 4px 10px var(--tab-scrollbar-gutter);
+  overflow-x: scroll;
   overflow-y: hidden;
   scroll-padding-left: 10px;
   scroll-padding-right: 10px;
@@ -876,9 +879,9 @@ input[type="checkbox"] {
   display: flex;
   position: relative;
   z-index: 24;
-  top: calc(-1 * var(--side-panel-tab-overlap));
+  top: calc(-1 * var(--tab-strip-overlap));
   width: auto;
-  height: calc(100% + var(--side-panel-tab-overlap));
+  height: calc(100% + var(--tab-strip-overlap));
   min-width: 144px;
   max-width: none;
   flex-direction: column;
@@ -953,10 +956,10 @@ input[type="checkbox"] {
 .resize-handle {
   position: relative;
   z-index: 25;
-  top: calc(-1 * var(--side-panel-tab-overlap));
+  top: calc(-1 * var(--tab-strip-overlap));
   width: auto;
   min-width: 0;
-  height: calc(100% + var(--side-panel-tab-overlap));
+  height: calc(100% + var(--tab-strip-overlap));
   background: var(--color-bg);
   cursor: col-resize;
 }
@@ -1356,7 +1359,7 @@ input[type="checkbox"] {
   .filter-panel {
     position: absolute;
     z-index: 20;
-    top: calc(-1 * var(--side-panel-tab-overlap));
+    top: calc(-1 * var(--tab-strip-overlap));
     bottom: 0;
     height: auto;
     width: var(--image-panel-effective-width);
