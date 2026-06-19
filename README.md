@@ -88,6 +88,7 @@ src/
   App.tsx                  Viewer shell mount point
   app/
     controller.ts          Pixi/app state controller behind the React bridge
+    controller/            Controller helpers: types, settings, geometry, tabs, exports, panels, forms, playback, stage
     viewer-bridge.ts       React/controller snapshot stores and command actions
     viewer-controller.ts   Lazy controller mount helper
     viewer-dom.ts          DOM refs needed by the Pixi viewport bridge
@@ -133,10 +134,6 @@ wasm/
 - **Tailwind CSS** with project-local viewer controls
 - **js-yaml** / **smol-toml** for alternate format export
 - PixiJS v8 rendering
-
-## Author
-
-[LambdaEd1th](https://github.com/LambdaEd1th)
 
 ## License
 

@@ -257,8 +257,6 @@ input[type="checkbox"] {
   --sprite-panel-track: var(--sprite-panel-effective-width);
   --image-panel-handle-track: var(--panel-handle-width);
   --sprite-panel-handle-track: var(--panel-handle-width);
-  --image-panel-tab-space: calc(var(--image-panel-effective-width) + var(--image-panel-handle-track));
-  --sprite-panel-tab-space: calc(var(--sprite-panel-effective-width) + var(--sprite-panel-handle-track));
   display: flex;
   min-width: 0;
   height: 100vh;
@@ -268,13 +266,11 @@ input[type="checkbox"] {
 #app[data-images-panel="closed"] {
   --image-panel-track: 0px;
   --image-panel-handle-track: 0px;
-  --image-panel-tab-space: 0px;
 }
 
 #app[data-sprites-panel="closed"] {
   --sprite-panel-track: 0px;
   --sprite-panel-handle-track: 0px;
-  --sprite-panel-tab-space: 0px;
 }
 
 /* Toolbar */
@@ -737,17 +733,18 @@ input[type="checkbox"] {
 
 /* Animation tabs */
 .tab-strip {
-  display: flex;
+  display: grid;
+  grid-template-columns:
+    var(--image-panel-track)
+    var(--image-panel-handle-track)
+    minmax(0, 1fr)
+    var(--sprite-panel-handle-track)
+    var(--sprite-panel-track);
   min-height: 36px;
   flex-shrink: 0;
-  align-items: flex-end;
-  padding: 4px calc(10px + var(--sprite-panel-tab-space)) 0 calc(10px + var(--image-panel-tab-space));
   border-bottom: 1px solid var(--color-border);
   background: var(--color-surface);
-  overflow-x: auto;
-  overflow-y: hidden;
-  scroll-padding-left: calc(10px + var(--image-panel-tab-space));
-  scroll-padding-right: calc(10px + var(--sprite-panel-tab-space));
+  overflow: hidden;
 }
 
 .tab-strip.hidden {
@@ -757,10 +754,17 @@ input[type="checkbox"] {
 .animation-tabs {
   display: flex;
   position: relative;
-  z-index: 26;
+  z-index: 1;
+  grid-column: 3;
   min-width: 0;
+  max-width: 100%;
   align-items: flex-end;
   gap: 3px;
+  padding: 4px 10px 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scroll-padding-left: 10px;
+  scroll-padding-right: 10px;
 }
 
 .animation-tab {
@@ -1185,27 +1189,27 @@ input[type="checkbox"] {
 
 /* Scrollbars */
 .filter-list::-webkit-scrollbar,
-.tab-strip::-webkit-scrollbar,
+.animation-tabs::-webkit-scrollbar,
 #toolbar::-webkit-scrollbar {
   width: 8px;
   height: 8px;
 }
 
 .filter-list::-webkit-scrollbar-track,
-.tab-strip::-webkit-scrollbar-track,
+.animation-tabs::-webkit-scrollbar-track,
 #toolbar::-webkit-scrollbar-track {
   background: transparent;
 }
 
 .filter-list::-webkit-scrollbar-thumb,
-.tab-strip::-webkit-scrollbar-thumb,
+.animation-tabs::-webkit-scrollbar-thumb,
 #toolbar::-webkit-scrollbar-thumb {
   border-radius: 999px;
   background: var(--color-border-strong);
 }
 
 .filter-list::-webkit-scrollbar-thumb:hover,
-.tab-strip::-webkit-scrollbar-thumb:hover,
+.animation-tabs::-webkit-scrollbar-thumb:hover,
 #toolbar::-webkit-scrollbar-thumb:hover {
   background: var(--color-placeholder);
 }
@@ -1339,6 +1343,14 @@ input[type="checkbox"] {
   #main-content {
     position: relative;
     grid-template-columns: minmax(0, 1fr);
+  }
+
+  .tab-strip {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .animation-tabs {
+    grid-column: 1;
   }
 
   .filter-panel {

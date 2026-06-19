@@ -1,28 +1,51 @@
-import { Application, Rectangle } from 'pixi.js';
-import * as jsYamlMod from 'js-yaml';
-import * as smolTomlMod from 'smol-toml';
-import { parseImageFileName, parseSpriteFrameLabels } from '../domain/model';
-import { computeAnimationBounds } from '../domain/timeline';
-import { encodePAM } from '../formats/pam/encoder';
-import { toRawJson } from '../formats/pam/serializer';
-import { loadPamCodecWasm } from '../formats/pam/wasm';
-import { exportFLA } from '../formats/fla/exporter';
+import { Application } from 'pixi.js';
+import { parseSpriteFrameLabels } from '../domain/model';
 import { t, onLangChange } from '../localization/i18n';
 import { renderFrameToPixiContainer, createBoundaryOverlay, resetPixiRenderer } from '../rendering/pixi-renderer';
 import { collectFilesFromDataTransfer } from './files';
-import { buildLoadedAnimation, type LoadedAnimation } from './load-animation';
-import { getSpecialLayerIndices } from './special-layers';
-import { downloadBlob, stripKnownAnimationExtension } from '../export/download';
-import { encodeApng } from '../export/apng';
-import { encodeAnimatedWebp, initAnimatedWebpEncoder } from '../export/animated-webp';
+import { buildLoadedAnimation } from './load-animation';
+import { initAnimatedWebpEncoder } from '../export/animated-webp';
 import type { Animation, TimelinesMap } from '../domain/types';
 import { waitForViewerDomRefs } from './viewer-dom';
+import { createExportActions } from './controller/export-actions';
+import { buildViewerFormSnapshot } from './controller/form-snapshot';
+import {
+  computeStageViewBoundsFor,
+  getExportScaleValueFor,
+  getPamStageBounds,
+  getPanForStageBounds,
+  normalizeExportSize,
+  parseExportDimensionValue,
+} from './controller/geometry';
+import { createPanelLayoutController } from './controller/panel-layout';
+import {
+  SETTINGS_KEY,
+  getStoredSizeScale,
+  getStoredSpeedValue,
+  getStoredThemePreference,
+  isPositiveNumber,
+  isPositiveNumericString,
+  isThemePreference,
+  readSettings,
+} from './controller/settings';
+import {
+  SPEED_PRESETS,
+  getBaseFrameRate as getBaseFrameRateFor,
+  getMatchingSpeedPresetValue as getMatchingSpeedPresetValueFor,
+} from './controller/speed-presets';
+import {
+  createAnimationTab as createAnimationTabState,
+  getSpriteForAnimation,
+} from './controller/tabs';
+import { buildViewerPanelsSnapshot } from './controller/panel-snapshot';
+import { createPlaybackController } from './controller/playback-controller';
+import { createSpecialLayerControls } from './controller/special-layer-controls';
+import { createStageInteractionController } from './controller/stage-interaction';
+import type { AnimationTab, ExportSize, StageBounds, ThemePreference } from './controller/types';
 import {
   publishViewerChrome,
   publishViewerCommand,
-  publishViewerExport,
   publishViewerForm,
-  publishViewerLayout,
   publishViewerPanels,
   publishViewerPlayback,
   publishViewerTabs,
@@ -59,98 +82,6 @@ function listen(
 }
 
 // ── Settings persistence ──
-const SETTINGS_KEY = 'pam-viewer-settings';
-type ThemePreference = 'system' | 'light' | 'dark';
-type FrameRange = { begin: number; end: number };
-type StageBounds = { x: number; y: number; width: number; height: number };
-type ExportSize = { width: number; height: number };
-
-interface AnimationTab extends LoadedAnimation {
-  id: number;
-  activeSpriteIndex: number;
-  frameRange: FrameRange;
-  currentFrame: number;
-  zoom: number;
-  panX: number;
-  panY: number;
-  imageFilter: boolean[];
-  spriteFilter: boolean[];
-  plantCustomLayers: number[];
-  zombieStateLayers: number[];
-  groundSwatchLayers: number[];
-  speedValue: string;
-  sizeScale: string;
-  exportSize: ExportSize;
-  imageRegex: string;
-  spriteRegex: string;
-  labelValue: string;
-}
-
-function readSettings(): Record<string, unknown> | null {
-  try {
-    const s = JSON.parse(localStorage.getItem(SETTINGS_KEY) ?? 'null');
-    return s && typeof s === 'object' ? s as Record<string, unknown> : null;
-  } catch {
-    return null;
-  }
-}
-
-function isThemePreference(value: unknown): value is ThemePreference {
-  return value === 'system' || value === 'light' || value === 'dark';
-}
-
-function getStoredThemePreference(): ThemePreference {
-  const s = readSettings();
-  return isThemePreference(s?.theme) ? s.theme : 'system';
-}
-
-function isPositiveNumber(value: unknown): value is number {
-  return typeof value === 'number' && Number.isFinite(value) && value > 0;
-}
-
-function isPositiveNumericString(value: unknown): value is string {
-  if (typeof value !== 'string') return false;
-  const parsed = Number(value);
-  return Number.isFinite(parsed) && parsed > 0;
-}
-
-function getStoredSpeedValue(): string | null {
-  const value = readSettings()?.speedValue;
-  return isPositiveNumericString(value) ? value : null;
-}
-
-function getStoredSizeScale(): string {
-  const value = readSettings()?.sizeScale;
-  return typeof value === 'string' && ['custom', '1', '2', '3', '4'].includes(value) ? value : '1';
-}
-
-function clampPanelWidth(width: number): number {
-  return Math.max(120, Math.min(500, Math.round(width)));
-}
-
-function getPresetExportSize(anim: Animation): ExportSize {
-  return {
-    width: Math.max(1, Math.round(anim.size[0])),
-    height: Math.max(1, Math.round(anim.size[1])),
-  };
-}
-
-function getExportScaleValueFor(size: ExportSize): string {
-  if (!animation || animation.size[0] <= 0 || animation.size[1] <= 0) return 'custom';
-  const ratioW = size.width / animation.size[0];
-  const ratioH = size.height / animation.size[1];
-  if (Math.abs(ratioW - ratioH) > 0.01) return 'custom';
-  const rounded = Math.round(ratioW);
-  return rounded >= 1 && rounded <= 4 && Math.abs(ratioW - rounded) <= 0.01
-    ? String(rounded)
-    : 'custom';
-}
-
-function parseExportDimensionValue(value: string, fallback: number): number {
-  const parsed = parseInt(value, 10);
-  return Number.isFinite(parsed) && parsed > 0 ? Math.min(99999, parsed) : fallback;
-}
-
 const systemDarkMedia = window.matchMedia('(prefers-color-scheme: dark)');
 let themePreference: ThemePreference = getStoredThemePreference();
 
@@ -176,10 +107,10 @@ function loadSettings(): void {
   if (typeof s.keepSpeed === 'boolean') keepSpeedChecked = s.keepSpeed;
   if (isPositiveNumericString(s.speedValue)) speedValue = s.speedValue;
   if (typeof s.sizeScale === 'string' && ['custom', '1', '2', '3', '4'].includes(s.sizeScale)) sizeScaleValue = s.sizeScale;
-  if (isPositiveNumber(s.imagePanelWidth)) setPanelWidth('images', s.imagePanelWidth);
-  if (isPositiveNumber(s.spritePanelWidth)) setPanelWidth('sprites', s.spritePanelWidth);
-  if (typeof s.showImages === 'boolean') setPanelVisible('images', s.showImages);
-  if (typeof s.showSprites === 'boolean') setPanelVisible('sprites', s.showSprites);
+  if (isPositiveNumber(s.imagePanelWidth)) panelLayout.setWidth('images', s.imagePanelWidth);
+  if (isPositiveNumber(s.spritePanelWidth)) panelLayout.setWidth('sprites', s.spritePanelWidth);
+  if (typeof s.showImages === 'boolean') panelLayout.setVisible('images', s.showImages);
+  if (typeof s.showSprites === 'boolean') panelLayout.setVisible('sprites', s.showSprites);
   if (isThemePreference(s.theme)) {
     themePreference = s.theme;
     applyThemePreference(themePreference);
@@ -197,15 +128,22 @@ function saveSettings(): void {
       keepSpeed: keepSpeedChecked,
       speedValue,
       sizeScale: sizeScaleValue,
-      imagePanelWidth: readPanelWidth('images'),
-      spritePanelWidth: readPanelWidth('sprites'),
-      showImages: imagesPanelVisible,
-      showSprites: spritesPanelVisible,
+      imagePanelWidth: panelLayout.readWidth('images'),
+      spritePanelWidth: panelLayout.readWidth('sprites'),
+      showImages: panelLayout.isVisible('images'),
+      showSprites: panelLayout.isVisible('sprites'),
     }));
   } catch (error) {
     console.warn('Failed to save viewer settings:', error);
   }
 }
+
+const panelLayout = createPanelLayoutController({
+  requestCanvasResize: () => {
+    requestAnimationFrame(resizeCanvas);
+  },
+  saveSettings,
+});
 
 const {
   stageContainer,
@@ -225,11 +163,7 @@ let activeSpriteIndex = -1;
 let frameLabels: { name: string; begin: number; end: number }[] = [];
 let frameRange = { begin: 0, end: 0 };
 let currentFrame = 0;
-let playing = false;
 let webpEncoderAvailable = true;
-let lastTimestamp = 0;
-let accumulator = 0;
-let rafId: number | null = null;
 
 function setAnimationNameText(animationName: string): void {
   publishViewerChrome({ animationName });
@@ -282,54 +216,10 @@ let stageFitScale = 1;
 let stageRenderScale = window.devicePixelRatio || 1;
 let stageViewBounds: StageBounds | null = null;
 
-function getPamStageBounds(anim: Animation): StageBounds {
-  return {
-    x: -anim.position[0],
-    y: -anim.position[1],
-    width: Math.max(1, anim.size[0]),
-    height: Math.max(1, anim.size[1]),
-  };
-}
-
-function unionStageBounds(a: StageBounds, b: StageBounds): StageBounds {
-  const x1 = Math.min(a.x, b.x);
-  const y1 = Math.min(a.y, b.y);
-  const x2 = Math.max(a.x + a.width, b.x + b.width);
-  const y2 = Math.max(a.y + a.height, b.y + b.height);
-  return {
-    x: x1,
-    y: y1,
-    width: Math.max(1, x2 - x1),
-    height: Math.max(1, y2 - y1),
-  };
-}
-
-function computeStageViewBoundsFor(
-  anim: Animation,
-  tex: Map<string, HTMLImageElement>,
-  timelines: TimelinesMap | null,
-): StageBounds {
-  const pamBounds = getPamStageBounds(anim);
-  if (!timelines) return pamBounds;
-
-  const contentBounds = computeAnimationBounds(anim, tex, timelines);
-  if (contentBounds.width <= 0 || contentBounds.height <= 0) {
-    return pamBounds;
-  }
-  return unionStageBounds(pamBounds, contentBounds);
-}
-
 function refreshStageViewBounds(): void {
   stageViewBounds = animation
     ? computeStageViewBoundsFor(animation, textures, spriteTimelines)
     : null;
-}
-
-function getPanForStageBounds(bounds: StageBounds): { x: number; y: number } {
-  return {
-    x: -bounds.x - bounds.width / 2,
-    y: -bounds.y - bounds.height / 2,
-  };
 }
 
 function resetPanToStageView(): void {
@@ -343,25 +233,8 @@ function resetPanToStageView(): void {
   panY = presetPan.y;
 }
 
-function getCanvasBitmapPoint(clientX: number, clientY: number): { x: number; y: number } {
-  const rect = canvas.getBoundingClientRect();
-  const scaleX = rect.width > 0 ? canvas.width / rect.width : 1;
-  const scaleY = rect.height > 0 ? canvas.height / rect.height : 1;
-  return {
-    x: (clientX - rect.left) * scaleX,
-    y: (clientY - rect.top) * scaleY,
-  };
-}
-
 let currentExportSize: ExportSize = { width: 1, height: 1 };
 let sizeScaleValue = getStoredSizeScale();
-
-function normalizeExportSize(size: ExportSize): ExportSize {
-  return {
-    width: Math.max(1, Math.min(99999, Math.round(size.width))),
-    height: Math.max(1, Math.min(99999, Math.round(size.height))),
-  };
-}
 
 function getCurrentExportSize(): ExportSize {
   return currentExportSize;
@@ -373,7 +246,7 @@ function updateSizeControls(): void {
 
 function setExportSizeValue(size: ExportSize, syncScale = true): void {
   currentExportSize = normalizeExportSize(size);
-  if (syncScale) sizeScaleValue = getExportScaleValueFor(currentExportSize);
+  if (syncScale) sizeScaleValue = getExportScaleValueFor(animation, currentExportSize);
   updateSizeDisplay();
   updateSizeControls();
 }
@@ -393,7 +266,7 @@ function setExportSizeFromScale(scaleValue: string): void {
 }
 
 function setExportSizeScaleValue(size: ExportSize): void {
-  sizeScaleValue = getExportScaleValueFor(size);
+  sizeScaleValue = getExportScaleValueFor(animation, size);
   updateSizeControls();
 }
 
@@ -402,10 +275,6 @@ let imageFilter: boolean[] = [];
 let spriteFilter: boolean[] = [];
 let imageRegex = '';
 let spriteRegex = '';
-let imagesPanelVisible = true;
-let spritesPanelVisible = true;
-let imagePanelWidth = 240;
-let spritePanelWidth = 240;
 let speedValue = getStoredSpeedValue() ?? '30';
 let loopChecked = true;
 let reverseChecked = false;
@@ -425,63 +294,6 @@ let groundSwatchLayers: number[] = [];
 
 function getActiveTab(): AnimationTab | null {
   return tabStates.find(tab => tab.id === activeTabId) ?? null;
-}
-
-function getSpriteForAnimation(anim: Animation, index: number): Animation['mainSprite'] {
-  return index === -1 ? anim.mainSprite : (anim.sprite[index] ?? null);
-}
-
-function getInitialFrameRange(sprite: Animation['mainSprite']): FrameRange {
-  if (!sprite || sprite.frame.length === 0) return { begin: 0, end: 0 };
-  return { begin: 0, end: sprite.frame.length - 1 };
-}
-
-function createAnimationTab(loadedAnimation: LoadedAnimation): AnimationTab {
-  const initialSpriteIndex = loadedAnimation.animation.mainSprite
-    ? -1
-    : (loadedAnimation.animation.sprite.length > 0 ? 0 : -1);
-  const initialSprite = getSpriteForAnimation(loadedAnimation.animation, initialSpriteIndex);
-  const {
-    plantCustomLayers,
-    zombieStateLayers,
-    groundSwatchLayers,
-    defaultHiddenLayers,
-  } = getSpecialLayerIndices(loadedAnimation.animation, loadedAnimation.displayName);
-  const spriteFilter = loadedAnimation.animation.sprite.map(() => true);
-  for (const idx of [...defaultHiddenLayers, ...zombieStateLayers]) {
-    spriteFilter[idx] = false;
-  }
-  const frameRange = getInitialFrameRange(initialSprite);
-  const viewBounds = computeStageViewBoundsFor(
-    loadedAnimation.animation,
-    loadedAnimation.textures,
-    loadedAnimation.spriteTimelines,
-  );
-  const presetPan = getPanForStageBounds(viewBounds);
-  const nativeSpeed = String((initialSprite as any)?.frameRate ?? loadedAnimation.animation.frameRate);
-  const initialExportSize = getPresetExportSize(loadedAnimation.animation);
-
-  return {
-    ...loadedAnimation,
-    id: nextTabId++,
-    activeSpriteIndex: initialSpriteIndex,
-    frameRange,
-    currentFrame: reverseChecked ? frameRange.end : frameRange.begin,
-    zoom: 1.0,
-    panX: presetPan.x,
-    panY: presetPan.y,
-    imageFilter: loadedAnimation.animation.image.map(() => true),
-    spriteFilter,
-    plantCustomLayers,
-    zombieStateLayers,
-    groundSwatchLayers,
-    speedValue: keepSpeedChecked ? (getStoredSpeedValue() ?? speedValue) : nativeSpeed,
-    sizeScale: '1',
-    exportSize: initialExportSize,
-    imageRegex: '',
-    spriteRegex: '',
-    labelValue: 'all',
-  };
 }
 
 function saveActiveTabState(): void {
@@ -537,80 +349,33 @@ function renderTabs(): void {
 }
 
 function publishForm(): void {
-  const spriteOptions = !animation
-    ? []
-    : [
-        ...(animation.mainSprite
-          ? [{ value: 'main', label: `MainSprite (${animation.mainSprite.frame.length} frames)` }]
-          : []),
-        ...animation.sprite.map((sp, i) => ({
-          value: String(i),
-          label: `${sp.name || 'sprite_' + i} (${sp.frame.length}f)`,
-        })),
-      ];
-  const labelOptions = activeSprite
-    ? [
-        { value: 'all', label: t('label.allFrames') },
-        ...frameLabels.map(label => ({
-          value: JSON.stringify({ begin: label.begin, end: label.end }),
-          label: `${label.name} [${label.begin}\u2013${label.end}]`,
-        })),
-      ]
-    : [];
-  const plantLayerOptions = plantCustomLayers.length > 0 && animation
-    ? [
-        ...plantCustomLayers.map(idx => ({
-          value: String(idx),
-          label: animation!.sprite[idx].name!.substring(7),
-        })),
-        { value: 'none', label: 'none' },
-      ]
-    : [];
-  const zombieStateOptions = zombieStateLayers.length > 0 && animation
-    ? [
-        ...zombieStateLayers.map(idx => ({
-          value: String(idx),
-          label: animation!.sprite[idx].name!,
-        })),
-        { value: 'none', label: 'none' },
-      ]
-    : [];
-
-  publishViewerForm({
-    spriteOptions,
+  publishViewerForm(buildViewerFormSnapshot({
+    animation,
+    activeSprite,
+    frameLabels,
+    plantCustomLayers,
+    zombieStateLayers,
+    groundSwatchLayers,
     spriteValue,
-    spriteDisabled: spriteOptions.length === 0,
-    labelOptions,
     labelValue,
-    labelDisabled: labelOptions.length === 0,
-    plantLayerOptions,
     plantLayerValue,
-    plantLayerDisabled: plantLayerOptions.length === 0,
-    zombieStateOptions,
     zombieStateValue,
-    zombieStateDisabled: zombieStateOptions.length === 0,
     groundSwatchChecked,
-    groundSwatchDisabled: groundSwatchLayers.length === 0,
     speedValue,
-    speedDisabled: !activeSprite,
-    speedPresetValue: activeSprite ? getMatchingSpeedPresetValue() : 'custom',
-    speedPresetDisabled: !activeSprite,
-    sizeWidthValue: animation ? String(currentExportSize.width) : '0',
-    sizeHeightValue: animation ? String(currentExportSize.height) : '0',
+    speedPresetValue: getMatchingSpeedPresetValue(),
+    currentExportSize,
     sizeScaleValue,
-    sizeDisabled: !animation,
-    sizeScaleDisabled: !animation,
     loopChecked,
     reverseChecked,
     autoplayChecked,
     keepSpeedChecked,
     boundaryChecked,
-    themeValue: themePreference,
-  });
+    themePreference,
+  }));
 }
 
 function renderEmptyAnimationState(): void {
-  stop();
+  playback.stop();
   activeTabId = null;
   animation = null;
   textures = new Map();
@@ -643,10 +408,10 @@ function renderEmptyAnimationState(): void {
 
   setAnimationNameText(t('anim.unloaded'));
   enableControls(false);
-  updateSliderRange();
-  updateRangeInputs();
+  playback.updateSliderRange();
+  playback.updateRangeInputs();
   publishViewerCommand({ clearDisabled: true });
-  updateFrameDisplay();
+  playback.updateFrameDisplay();
   setStatusText(t('status.hint'));
   publishForm();
   publishPanels();
@@ -692,15 +457,15 @@ function renderActiveTabState(startPlayback = false): void {
       ? tab.labelValue
       : findLabelValueForRange();
     enableControls(true);
-    updateSliderRange();
-    updateRangeInputs();
-    updateFrameDisplay();
+    playback.updateSliderRange();
+    playback.updateRangeInputs();
+    playback.updateFrameDisplay();
   } else {
     labelValue = '';
     enableControls(false);
-    updateSliderRange();
-    updateRangeInputs();
-    updateFrameDisplay();
+    playback.updateSliderRange();
+    playback.updateRangeInputs();
+    playback.updateFrameDisplay();
   }
 
   speedValue = tab.speedValue;
@@ -713,7 +478,7 @@ function renderActiveTabState(startPlayback = false): void {
   publishForm();
   populateImagePanel();
   populateSpritePanel();
-  renderSpecialLayerControls();
+  specialLayers.renderControls();
   highlightActiveSpriteInPanel();
 
   publishViewerCommand({ clearDisabled: false });
@@ -726,7 +491,7 @@ function renderActiveTabState(startPlayback = false): void {
   publishViewerChrome({ dropHintVisible: false });
   renderTabs();
   resizeCanvas();
-  if (startPlayback && activeSprite && autoplayChecked) play();
+  if (startPlayback && activeSprite && autoplayChecked) playback.play();
 }
 
 function activateAnimationTab(tabId: number, startPlayback = false): void {
@@ -735,7 +500,7 @@ function activateAnimationTab(tabId: number, startPlayback = false): void {
     return;
   }
   saveActiveTabState();
-  stop();
+  playback.stop();
   activeTabId = tabId;
   const tab = getActiveTab();
   if (!tab) {
@@ -762,7 +527,7 @@ function closeAnimationTab(tabId: number): void {
     return;
   }
 
-  stop();
+  playback.stop();
   activeTabId = null;
   if (nextActiveId !== null) {
     activateAnimationTab(nextActiveId);
@@ -872,7 +637,7 @@ async function loadDroppedFiles(dataTransfer: DataTransfer): Promise<void> {
 async function loadFromFiles(files: File[]): Promise<void> {
   setStatusText(t('status.loading'));
   saveActiveTabState();
-  stop();
+  playback.stop();
 
   const loadedAnimation = await buildLoadedAnimation(files);
   if (!loadedAnimation) {
@@ -880,7 +645,11 @@ async function loadFromFiles(files: File[]): Promise<void> {
     return;
   }
 
-  const tab = createAnimationTab(loadedAnimation);
+  const tab = createAnimationTabState(loadedAnimation, {
+    id: nextTabId++,
+    reverseChecked,
+    initialSpeedValue: keepSpeedChecked ? (getStoredSpeedValue() ?? speedValue) : undefined,
+  });
   tabStates.push(tab);
   activateAnimationTab(tab.id, true);
 }
@@ -895,7 +664,7 @@ function clearAnimation(): void {
 }
 
 function activateSprite(index: number): void {
-  stop();
+  playback.stop();
   activeSpriteIndex = index;
   spriteValue = index === -1 ? 'main' : String(index);
   activeSprite = index === -1 ? animation!.mainSprite : animation!.sprite[index];
@@ -911,19 +680,19 @@ function activateSprite(index: number): void {
     speedValue = String((activeSprite as any).frameRate ?? animation!.frameRate);
   }
   updateSpeedPresetTrigger();
-  updateSliderRange();
-  updateRangeInputs();
-  updateFrameDisplay();
+  playback.updateSliderRange();
+  playback.updateRangeInputs();
+  playback.updateFrameDisplay();
   publishForm();
   highlightActiveSpriteInPanel();
   drawCurrentFrame();
 
-  if (autoplayChecked) play();
+  if (autoplayChecked) playback.play();
 }
 
 // ── Label selection ──
 function selectLabelValue(value: string): void {
-  stop();
+  playback.stop();
   labelValue = value;
   if (value === 'all') {
     frameRange = { begin: 0, end: activeSprite!.frame.length - 1 };
@@ -931,70 +700,26 @@ function selectLabelValue(value: string): void {
     frameRange = JSON.parse(value);
   }
   currentFrame = reverseChecked ? frameRange.end : frameRange.begin;
-  updateSliderRange();
-  updateRangeInputs();
-  updateFrameDisplay();
+  playback.updateSliderRange();
+  playback.updateRangeInputs();
+  playback.updateFrameDisplay();
   drawCurrentFrame();
   publishForm();
 }
 
-// ── Frame slider ──
-let wasPlayingBeforeSlider = false;
-
-function updateSliderRange(): void {
-  publishViewerPlayback({
-    frameSliderMin: String(frameRange.begin),
-    frameSliderMax: String(frameRange.end),
-    frameSliderValue: String(currentFrame),
-    frameSliderDisabled: !activeSprite,
-  });
-}
-
-function updateRangeInputs(): void {
-  const maxFrame = activeSprite ? activeSprite.frame.length - 1 : 0;
-  publishViewerPlayback({
-    rangeBeginValue: String(frameRange.begin),
-    rangeEndValue: String(frameRange.end),
-    rangeMax: String(maxFrame),
-    rangeDisabled: !activeSprite,
-  });
-}
-
-function setRangeBeginValue(value: string): void {
-  const v = Math.max(0, Math.min(parseInt(value, 10) || 0, frameRange.end));
-  frameRange.begin = v;
-  if (currentFrame < v) currentFrame = v;
-  updateSliderRange();
-  updateRangeInputs();
-  updateFrameDisplay();
-  drawCurrentFrame();
-}
-
-function setRangeEndValue(value: string): void {
-  const maxFrame = activeSprite ? activeSprite.frame.length - 1 : 0;
-  const v = Math.max(frameRange.begin, Math.min(parseInt(value, 10) || 0, maxFrame));
-  frameRange.end = v;
-  if (currentFrame > v) currentFrame = v;
-  updateSliderRange();
-  updateRangeInputs();
-  updateFrameDisplay();
-  drawCurrentFrame();
-}
-
-function beginFrameScrub(): void {
-  wasPlayingBeforeSlider = playing;
-  if (playing) stop();
-}
-
-function setFrameValue(value: string): void {
-  currentFrame = parseInt(value, 10);
-  updateFrameDisplay();
-  drawCurrentFrame();
-}
-
-function endFrameScrub(): void {
-  if (wasPlayingBeforeSlider) play();
-}
+const playback = createPlaybackController({
+  getActiveSprite: () => activeSprite,
+  getFrameRange: () => frameRange,
+  setFrameRange: value => { frameRange = value; },
+  getCurrentFrame: () => currentFrame,
+  setCurrentFrame: value => { currentFrame = value; },
+  getSpeedValue: () => speedValue,
+  isLoopChecked: () => loopChecked,
+  isReverseChecked: () => reverseChecked,
+  setPlayingState,
+  setFrameText,
+  drawCurrentFrame,
+});
 
 // ── Playback controls ──
 function enableControls(enabled: boolean): void {
@@ -1005,88 +730,6 @@ function enableControls(enabled: boolean): void {
   });
 }
 
-function togglePlayback(): void {
-  if (playing) stop(); else play();
-}
-
-function previousFrame(): void {
-  stop();
-  currentFrame = currentFrame <= frameRange.begin ? frameRange.end : currentFrame - 1;
-  updateFrameDisplay();
-  drawCurrentFrame();
-}
-
-function nextFrame(): void {
-  stop();
-  currentFrame = currentFrame >= frameRange.end ? frameRange.begin : currentFrame + 1;
-  updateFrameDisplay();
-  drawCurrentFrame();
-}
-
-function play(): void {
-  if (!activeSprite) return;
-  playing = true;
-  setPlayingState(true);
-  lastTimestamp = performance.now();
-  accumulator = 0;
-  tick(lastTimestamp);
-}
-
-function stop(): void {
-  playing = false;
-  setPlayingState(false);
-  if (rafId) { cancelAnimationFrame(rafId); rafId = null; }
-}
-
-function tick(timestamp: number): void {
-  if (!playing) return;
-  const fps = parseFloat(speedValue) || 30;
-  const frameDuration = 1000 / fps;
-  const delta = timestamp - lastTimestamp;
-  lastTimestamp = timestamp;
-  accumulator += delta;
-
-  const reverse = reverseChecked;
-  let advanced = false;
-  while (accumulator >= frameDuration) {
-    accumulator -= frameDuration;
-    currentFrame += reverse ? -1 : 1;
-    if (!reverse && currentFrame > frameRange.end) {
-      if (loopChecked) {
-        currentFrame = frameRange.begin;
-      } else {
-        currentFrame = frameRange.end;
-        stop(); updateFrameDisplay(); drawCurrentFrame(); return;
-      }
-    } else if (reverse && currentFrame < frameRange.begin) {
-      if (loopChecked) {
-        currentFrame = frameRange.end;
-      } else {
-        currentFrame = frameRange.begin;
-        stop(); updateFrameDisplay(); drawCurrentFrame(); return;
-      }
-    }
-    advanced = true;
-  }
-  if (advanced) {
-    updateFrameDisplay();
-    drawCurrentFrame();
-  }
-  rafId = requestAnimationFrame(tick);
-}
-
-function updateFrameDisplay(): void {
-  const total = activeSprite ? activeSprite.frame.length : 0;
-  if (total === 0) {
-    setFrameText('0 / 0');
-    publishViewerPlayback({ frameSliderValue: '0' });
-    return;
-  }
-  setFrameText(`${currentFrame} / ${total - 1}`);
-  publishViewerPlayback({ frameSliderValue: String(currentFrame) });
-}
-
-// ── Zoom / Pan ──
 function updateZoomDisplay(): void {
   setZoomText(Math.round(zoom * 100) + '%');
 }
@@ -1100,274 +743,43 @@ function updateSizeDisplay(): void {
   setExportSizeText(`${w}\u00d7${h}`);
 }
 
-function updateCoordDisplayAt(clientX: number, clientY: number): void {
-  if (!animation) { setCoordText(''); return; }
-  const point = getCanvasBitmapPoint(clientX, clientY);
-  const cx = canvas.width / 2 + panX * stageRenderScale;
-  const cy = canvas.height / 2 + panY * stageRenderScale;
-  const sx = (point.x - cx) / (zoom * stageRenderScale) + animation.position[0];
-  const sy = (point.y - cy) / (zoom * stageRenderScale) + animation.position[1];
-  setCoordText(`${Math.round(sx)}, ${Math.round(sy)}`);
-}
-
-function wheelStage(clientX: number, clientY: number, deltaY: number): void {
-  if (!animation) return;
-  const point = getCanvasBitmapPoint(clientX, clientY);
-  const cx = canvas.width / 2 + panX * stageRenderScale;
-  const cy = canvas.height / 2 + panY * stageRenderScale;
-  const ax = (point.x - cx) / (zoom * stageRenderScale) + animation.position[0];
-  const ay = (point.y - cy) / (zoom * stageRenderScale) + animation.position[1];
-
-  const factor = deltaY > 0 ? 0.9 : 1.1;
-  zoom = Math.max(0.05, Math.min(100, zoom * factor));
-
-  panX = (point.x - canvas.width / 2) / stageRenderScale -
-    (ax - animation.position[0]) * zoom;
-  panY = (point.y - canvas.height / 2) / stageRenderScale -
-    (ay - animation.position[1]) * zoom;
-
-  updateZoomDisplay();
-  drawCurrentFrame();
-}
-
-let isPanning = false;
-let panStartX = 0, panStartY = 0, panOriginX = 0, panOriginY = 0;
-
-// ── Boundary drag-resize state ──
-type EdgeDir = 'n' | 's' | 'e' | 'w' | 'ne' | 'nw' | 'se' | 'sw';
-let boundaryDragEdge: EdgeDir | null = null;
-let boundaryDragStart: {
-  mx: number; my: number;
-  origW: number; origH: number;
-  origPosX: number; origPosY: number;
-  origPanX: number; origPanY: number;
-  exportScale: string;
-} | null = null;
-const EDGE_HIT = 6;
-
-function clientToAnimSpace(clientX: number, clientY: number): { ax: number; ay: number } {
-  const point = getCanvasBitmapPoint(clientX, clientY);
-  const cx = canvas.width / 2 + panX * stageRenderScale;
-  const cy = canvas.height / 2 + panY * stageRenderScale;
-  const ox = animation!.position[0];
-  const oy = animation!.position[1];
-  const ax = (point.x - cx) / (zoom * stageRenderScale) + ox;
-  const ay = (point.y - cy) / (zoom * stageRenderScale) + oy;
-  return { ax, ay };
-}
-
-function hitTestBoundaryEdge(clientX: number, clientY: number): EdgeDir | null {
-  if (!animation || !boundaryChecked) return null;
-  const w = animation.size[0];
-  const h = animation.size[1];
-  const { ax, ay } = clientToAnimSpace(clientX, clientY);
-  const threshold = EDGE_HIT / (zoom * stageFitScale);
-
-  const nearLeft   = Math.abs(ax) < threshold;
-  const nearRight  = Math.abs(ax - w) < threshold;
-  const nearTop    = Math.abs(ay) < threshold;
-  const nearBottom = Math.abs(ay - h) < threshold;
-  const inX = ax > -threshold && ax < w + threshold;
-  const inY = ay > -threshold && ay < h + threshold;
-
-  if (nearTop && nearLeft && inX && inY) return 'nw';
-  if (nearTop && nearRight && inX && inY) return 'ne';
-  if (nearBottom && nearLeft && inX && inY) return 'sw';
-  if (nearBottom && nearRight && inX && inY) return 'se';
-  if (nearTop && inX) return 'n';
-  if (nearBottom && inX) return 's';
-  if (nearLeft && inY) return 'w';
-  if (nearRight && inY) return 'e';
-  return null;
-}
-
-const EDGE_CURSORS: Record<EdgeDir, string> = {
-  n: 'ns-resize', s: 'ns-resize',
-  e: 'ew-resize', w: 'ew-resize',
-  ne: 'nesw-resize', sw: 'nesw-resize',
-  nw: 'nwse-resize', se: 'nwse-resize',
-};
-
-function syncExportSizeAfterBoundaryResize(exportScale: string): void {
-  if (exportScale === 'custom') {
-    setExportSizeScaleValue(getCurrentExportSize());
-    updateSizeDisplay();
-    return;
-  }
-
-  setExportSizeFromScale(exportScale);
-}
-
-function pointerDownStage(clientX: number, clientY: number, button: number): boolean {
-  const edge = hitTestBoundaryEdge(clientX, clientY);
-  if (edge && button === 0) {
-    boundaryDragEdge = edge;
-    boundaryDragStart = {
-      mx: clientX, my: clientY,
-      origW: animation!.size[0], origH: animation!.size[1],
-      origPosX: animation!.position[0], origPosY: animation!.position[1],
-      origPanX: panX, origPanY: panY,
-      exportScale: sizeScaleValue,
-    };
-    return true;
-  }
-
-  if (button === 0 || button === 1) {
-    isPanning = true;
-    panStartX = clientX;
-    panStartY = clientY;
-    panOriginX = panX;
-    panOriginY = panY;
-    return true;
-  }
-  return false;
-}
-
-function pointerMoveStage(clientX: number, clientY: number): void {
-  updateCoordDisplayAt(clientX, clientY);
-
-  if (boundaryDragEdge && boundaryDragStart) {
-    const dx = (clientX - boundaryDragStart.mx) / (zoom * stageFitScale);
-    const dy = (clientY - boundaryDragStart.my) / (zoom * stageFitScale);
-    const edge = boundaryDragEdge;
-    let newW = boundaryDragStart.origW;
-    let newH = boundaryDragStart.origH;
-    let newPosX = boundaryDragStart.origPosX;
-    let newPosY = boundaryDragStart.origPosY;
-
-    if (edge.includes('e')) newW = Math.max(1, Math.round(boundaryDragStart.origW + dx));
-    if (edge.includes('w')) {
-      newW = Math.max(1, Math.round(boundaryDragStart.origW - dx));
-      newPosX = Math.round(boundaryDragStart.origPosX - dx);
-    }
-    if (edge.includes('s')) newH = Math.max(1, Math.round(boundaryDragStart.origH + dy));
-    if (edge.includes('n')) {
-      newH = Math.max(1, Math.round(boundaryDragStart.origH - dy));
-      newPosY = Math.round(boundaryDragStart.origPosY - dy);
-    }
-
-    animation!.size[0] = newW;
-    animation!.size[1] = newH;
-    animation!.position[0] = newPosX;
-    animation!.position[1] = newPosY;
-    refreshStageViewBounds();
-    resetPanToStageView();
-    syncExportSizeAfterBoundaryResize(boundaryDragStart.exportScale);
-    resizeCanvas();
-    return;
-  }
-
-  if (!isPanning) {
-    const edge = hitTestBoundaryEdge(clientX, clientY);
-    publishViewerChrome({ stageCursor: edge ? EDGE_CURSORS[edge] : '' });
-  }
-
-  if (!isPanning) return;
-  panX = panOriginX + (clientX - panStartX) / stageFitScale;
-  panY = panOriginY + (clientY - panStartY) / stageFitScale;
-  drawCurrentFrame();
-}
-
-function pointerLeaveStage(): void {
-  setCoordText('');
-  if (!boundaryDragEdge) publishViewerChrome({ stageCursor: '' });
-}
-
-function pointerUpStage(): boolean {
-  if (boundaryDragEdge) {
-    boundaryDragEdge = null;
-    boundaryDragStart = null;
-    publishViewerChrome({ stageCursor: '' });
-    return true;
-  }
-  if (isPanning) {
-    isPanning = false;
-    return true;
-  }
-  return false;
-}
-
-function resetZoomView(): void {
-  zoom = 1.0;
-  resetPanToStageView();
-  updateZoomDisplay();
-  drawCurrentFrame();
-}
-
-function zoomInView(): void {
-  zoom = Math.min(100, zoom * 1.15);
-  updateZoomDisplay();
-  drawCurrentFrame();
-}
-
-function zoomOutView(): void {
-  zoom = Math.max(0.05, zoom / 1.15);
-  updateZoomDisplay();
-  drawCurrentFrame();
-}
-
-// ── Filter panels ──
-function getSpriteThumbTexture(sp: Animation['sprite'][0]): HTMLImageElement | null {
-  if (sp.frame.length !== 1) return null;
-  const frame0 = sp.frame[0];
-  for (const a of frame0.append) {
-    if (!a.sprite && a.resource < animation!.image.length) {
-      const imgDef = animation!.image[a.resource];
-      return textures.get(imgDef.name) || null;
-    }
-  }
-  return null;
-}
+const stageInteraction = createStageInteractionController({
+  canvas,
+  getAnimation: () => animation,
+  isBoundaryEnabled: () => boundaryChecked,
+  getZoom: () => zoom,
+  setZoom: value => { zoom = value; },
+  getPan: () => ({ x: panX, y: panY }),
+  setPan: pan => {
+    panX = pan.x;
+    panY = pan.y;
+  },
+  getStageFitScale: () => stageFitScale,
+  getStageRenderScale: () => stageRenderScale,
+  getSizeScaleValue: () => sizeScaleValue,
+  getCurrentExportSize,
+  setExportSizeScaleValue,
+  setExportSizeFromScale,
+  updateZoomDisplay,
+  updateSizeDisplay,
+  setCoordText,
+  setStageCursor: cursor => publishViewerChrome({ stageCursor: cursor }),
+  refreshStageViewBounds,
+  resetPanToStageView,
+  resizeCanvas,
+  drawCurrentFrame,
+});
 
 function publishPanels(): void {
-  if (!animation) {
-    publishViewerPanels({ images: [], sprites: [], imageRegex, spriteRegex });
-    return;
-  }
-
-  publishViewerPanels({
+  publishViewerPanels(buildViewerPanelsSnapshot({
+    animation,
+    textures,
+    activeSpriteIndex,
+    imageFilter,
+    spriteFilter,
     imageRegex,
     spriteRegex,
-    images: animation.image.map((img, i) => {
-      const tex = textures.get(img.name);
-      return {
-        index: i,
-        name: parseImageFileName(img.name),
-        title: img.name,
-        filterName: parseImageFileName(img.name).toLowerCase(),
-        thumbSrc: tex?.src ?? null,
-        sizeText: img.size ? `${img.size.width}\u00d7${img.size.height}` : null,
-        checked: imageFilter[i] ?? true,
-      };
-    }),
-    sprites: [
-      ...animation.sprite.map((sp, i) => {
-        const thumbTex = getSpriteThumbTexture(sp);
-        return {
-          key: String(i),
-          spriteIndex: i,
-          name: sp.name || 'sprite_' + i,
-          filterName: (sp.name || 'sprite_' + i).toLowerCase(),
-          thumbSrc: thumbTex?.src ?? null,
-          frameText: sp.frame.length + 'f',
-          checked: spriteFilter[i] ?? true,
-          active: activeSpriteIndex === i,
-          main: false,
-        };
-      }),
-      ...(animation.mainSprite ? [{
-        key: 'main',
-        spriteIndex: -1,
-        name: 'MainSprite',
-        filterName: 'mainsprite',
-        thumbSrc: null,
-        frameText: animation.mainSprite.frame.length + 'f',
-        checked: null,
-        active: activeSpriteIndex === -1,
-        main: true,
-      }] : []),
-    ],
-  });
+  }));
 }
 
 function populateImagePanel(): void {
@@ -1382,6 +794,22 @@ function highlightActiveSpriteInPanel(): void {
   publishPanels();
 }
 
+const specialLayers = createSpecialLayerControls({
+  getPlantLayers: () => plantCustomLayers,
+  getZombieStateLayers: () => zombieStateLayers,
+  getGroundSwatchLayers: () => groundSwatchLayers,
+  getSpriteFilter: () => spriteFilter,
+  setSpriteVisible: (index, visible) => {
+    spriteFilter[index] = visible;
+  },
+  setPlantLayerValue: value => { plantLayerValue = value; },
+  setZombieStateValue: value => { zombieStateValue = value; },
+  setGroundSwatchChecked: checked => { groundSwatchChecked = checked; },
+  publishForm,
+  publishPanels,
+  drawCurrentFrame,
+});
+
 const unsetViewerPanelActions = setViewerPanelActions({
   setImageChecked: (index, checked) => {
     imageFilter[index] = checked;
@@ -1390,7 +818,7 @@ const unsetViewerPanelActions = setViewerPanelActions({
   },
   setSpriteChecked: (index, checked) => {
     spriteFilter[index] = checked;
-    syncSpecialLayerUI();
+    specialLayers.syncUI();
     publishPanels();
     drawCurrentFrame();
   },
@@ -1417,67 +845,93 @@ const unsetViewerPanelActions = setViewerPanelActions({
   },
   selectAllSprites: () => {
     spriteFilter.fill(true);
-    syncSpecialLayerUI();
+    specialLayers.syncUI();
     publishPanels();
     drawCurrentFrame();
   },
   clearSprites: () => {
     spriteFilter.fill(false);
-    syncSpecialLayerUI();
+    specialLayers.syncUI();
     publishPanels();
     drawCurrentFrame();
   },
 });
 
 const unsetViewerPlaybackActions = setViewerPlaybackActions({
-  previousFrame,
-  togglePlayback,
-  nextFrame,
-  beginFrameScrub,
-  setFrame: setFrameValue,
-  endFrameScrub,
-  setRangeBegin: setRangeBeginValue,
-  setRangeEnd: setRangeEndValue,
+  previousFrame: playback.previousFrame,
+  togglePlayback: playback.toggle,
+  nextFrame: playback.nextFrame,
+  beginFrameScrub: playback.beginFrameScrub,
+  setFrame: playback.setFrame,
+  endFrameScrub: playback.endFrameScrub,
+  setRangeBegin: playback.setRangeBegin,
+  setRangeEnd: playback.setRangeEnd,
+});
+
+const exportActions = createExportActions({
+  getPixiApp: () => pixiApp,
+  getAnimation: () => animation,
+  getTextures: () => textures,
+  getSpriteTimelines: () => spriteTimelines,
+  getActiveSprite: () => activeSprite,
+  getActiveSpriteIndex: () => activeSpriteIndex,
+  getCurrentFrame: () => currentFrame,
+  getFrameRange: () => frameRange,
+  getImageFilter: () => imageFilter,
+  getSpriteFilter: () => spriteFilter,
+  getSpeedValue: () => speedValue,
+  getExportSize: getCurrentExportSize,
+  getDisplayName: () => getActiveTab()?.displayName ?? 'animation',
+  drawCurrentFrame,
+  setControlsEnabled: enableControls,
+});
+
+initAnimatedWebpEncoder().catch(() => {
+  webpEncoderAvailable = false;
+  publishViewerCommand({
+    webpDisabled: true,
+    webpTitle: 'WebP WASM failed to load',
+  });
 });
 
 const unsetViewerCommandActions = setViewerCommandActions({
   loadFiles: (files) => { void loadFilesFromUi(files); },
   dropFiles: (dataTransfer) => { void loadDroppedFiles(dataTransfer); },
   clear: clearAnimation,
-  toggleImages: toggleImagesPanel,
-  toggleSprites: toggleSpritesPanel,
-  beginPanelResize,
-  resizePanel,
-  endPanelResize,
+  toggleImages: panelLayout.toggleImages,
+  toggleSprites: panelLayout.toggleSprites,
+  beginPanelResize: panelLayout.beginResize,
+  resizePanel: panelLayout.resize,
+  endPanelResize: panelLayout.endResize,
   resizeViewport,
-  resetZoom: resetZoomView,
-  zoomIn: zoomInView,
-  zoomOut: zoomOutView,
-  exportPng,
-  exportApng,
-  exportWebp,
-  exportFla: () => { void exportFla(); },
-  convertJson: () => { void convertJson(); },
-  convertYaml,
-  convertToml,
-  convertPam: () => { void convertPam(); },
-  cancelExport: () => { exportCancelled = true; },
+  resetZoom: stageInteraction.resetZoom,
+  zoomIn: stageInteraction.zoomIn,
+  zoomOut: stageInteraction.zoomOut,
+  exportPng: exportActions.exportPng,
+  exportApng: exportActions.exportApng,
+  exportWebp: exportActions.exportWebp,
+  exportFla: () => { void exportActions.exportFla(); },
+  convertJson: () => { void exportActions.convertJson(); },
+  convertYaml: exportActions.convertYaml,
+  convertToml: exportActions.convertToml,
+  convertPam: () => { void exportActions.convertPam(); },
+  cancelExport: exportActions.cancelExport,
 });
 
 const unsetViewerStageActions = setViewerStageActions({
-  wheel: wheelStage,
-  pointerDown: pointerDownStage,
-  pointerMove: pointerMoveStage,
-  pointerLeave: pointerLeaveStage,
-  pointerUp: pointerUpStage,
+  wheel: stageInteraction.wheel,
+  pointerDown: stageInteraction.pointerDown,
+  pointerMove: stageInteraction.pointerMove,
+  pointerLeave: stageInteraction.pointerLeave,
+  pointerUp: stageInteraction.pointerUp,
 });
 
 const unsetViewerFormActions = setViewerFormActions({
   selectSprite: (value) => activateSprite(value === 'main' ? -1 : parseInt(value, 10)),
   selectLabel: selectLabelValue,
-  selectPlantLayer: selectPlantLayerValue,
-  selectZombieState: selectZombieStateValue,
-  setGroundSwatch: setGroundSwatchValue,
+  selectPlantLayer: specialLayers.selectPlantLayer,
+  selectZombieState: specialLayers.selectZombieState,
+  setGroundSwatch: specialLayers.setGroundSwatch,
   setSpeed: setSpeedValue,
   selectSpeedPreset: selectSpeedPresetValue,
   setSizeWidth: setExportWidthValue,
@@ -1490,162 +944,6 @@ const unsetViewerFormActions = setViewerFormActions({
   setBoundary: setBoundaryChecked,
   selectTheme: selectThemePreference,
 });
-
-// ── Special Layer Detection & Controls ──
-
-function renderSpecialLayerControls(): void {
-  if (plantCustomLayers.length > 0) {
-    plantLayerValue = 'none';
-  } else {
-    plantLayerValue = '';
-  }
-
-  if (zombieStateLayers.length > 0) {
-    zombieStateValue = 'none';
-  } else {
-    zombieStateValue = '';
-  }
-
-  if (groundSwatchLayers.length > 0) {
-    groundSwatchChecked = groundSwatchLayers.some(idx => spriteFilter[idx]);
-  } else {
-    groundSwatchChecked = false;
-  }
-  syncSpecialLayerUI();
-  publishForm();
-}
-
-function syncSpriteCheckbox(sprIndex: number, checked: boolean): void {
-  spriteFilter[sprIndex] = checked;
-}
-
-function applyExclusiveLayer(layerIndices: number[], selectedIdx: number): void {
-  for (const idx of layerIndices) {
-    const show = idx === selectedIdx;
-    spriteFilter[idx] = show;
-    syncSpriteCheckbox(idx, show);
-  }
-  publishPanels();
-  drawCurrentFrame();
-}
-
-function syncSpecialLayerUI(): void {
-  if (plantCustomLayers.length > 0) {
-    const visible = plantCustomLayers.filter(i => spriteFilter[i]);
-    if (visible.length === 0) plantLayerValue = 'none';
-    else if (visible.length === 1) plantLayerValue = String(visible[0]);
-  }
-  if (zombieStateLayers.length > 0) {
-    const visible = zombieStateLayers.filter(i => spriteFilter[i]);
-    if (visible.length === 0) zombieStateValue = 'none';
-    else if (visible.length === 1) zombieStateValue = String(visible[0]);
-  }
-  if (groundSwatchLayers.length > 0) {
-    groundSwatchChecked = groundSwatchLayers.some(i => spriteFilter[i]);
-  }
-  publishForm();
-}
-
-function selectPlantLayerValue(val: string): void {
-  plantLayerValue = val;
-  const selectedIdx = val === 'none' ? -1 : parseInt(val, 10);
-  applyExclusiveLayer(plantCustomLayers, selectedIdx);
-}
-
-function selectZombieStateValue(val: string): void {
-  zombieStateValue = val;
-  const selectedIdx = val === 'none' ? -1 : parseInt(val, 10);
-  applyExclusiveLayer(zombieStateLayers, selectedIdx);
-}
-
-function setGroundSwatchValue(show: boolean): void {
-  groundSwatchChecked = show;
-  for (const idx of groundSwatchLayers) {
-    spriteFilter[idx] = show;
-    syncSpriteCheckbox(idx, show);
-  }
-  publishPanels();
-  drawCurrentFrame();
-  syncSpecialLayerUI();
-}
-
-// ── Panel resize handles ──
-function publishPanelLayout(): void {
-  const layout = {
-    imagesPanelVisible,
-    spritesPanelVisible,
-    imagePanelWidth,
-    spritePanelWidth,
-  };
-  publishViewerLayout(layout);
-  publishViewerChrome({
-    imagesPanelVisible,
-    spritesPanelVisible,
-  });
-}
-
-function setPanelWidth(which: 'images' | 'sprites', width: number): void {
-  if (which === 'images') {
-    imagePanelWidth = clampPanelWidth(width);
-  } else {
-    spritePanelWidth = clampPanelWidth(width);
-  }
-  publishPanelLayout();
-}
-
-function readPanelWidth(which: 'images' | 'sprites'): number {
-  return which === 'images' ? imagePanelWidth : spritePanelWidth;
-}
-
-let panelResizeState: {
-  panel: 'images' | 'sprites';
-  startX: number;
-  startWidth: number;
-} | null = null;
-
-function beginPanelResize(which: 'images' | 'sprites', clientX: number): void {
-  panelResizeState = {
-    panel: which,
-    startX: clientX,
-    startWidth: readPanelWidth(which),
-  };
-}
-
-function resizePanel(clientX: number): void {
-  if (!panelResizeState) return;
-  const delta = panelResizeState.panel === 'images'
-    ? clientX - panelResizeState.startX
-    : panelResizeState.startX - clientX;
-  setPanelWidth(panelResizeState.panel, panelResizeState.startWidth + delta);
-  requestAnimationFrame(resizeCanvas);
-}
-
-function endPanelResize(): void {
-  if (!panelResizeState) return;
-  panelResizeState = null;
-  saveSettings();
-}
-
-function setPanelVisible(which: 'images' | 'sprites', visible: boolean): void {
-  if (which === 'images') {
-    imagesPanelVisible = visible;
-  } else {
-    spritesPanelVisible = visible;
-  }
-  publishPanelLayout();
-}
-
-function toggleImagesPanel(): void {
-  setPanelVisible('images', !imagesPanelVisible);
-  saveSettings();
-  requestAnimationFrame(resizeCanvas);
-}
-
-function toggleSpritesPanel(): void {
-  setPanelVisible('sprites', !spritesPanelVisible);
-  saveSettings();
-  requestAnimationFrame(resizeCanvas);
-}
 
 // ── Rendering ──
 function drawCurrentFrame(): void {
@@ -1741,27 +1039,12 @@ function selectSizeScaleValue(value: string): void {
 }
 
 // ── Speed preset menu ──
-const SPEED_PRESETS = [
-  { label: '0.25\u00d7', factor: 0.25 },
-  { label: '0.5\u00d7',  factor: 0.5 },
-  { label: '1\u00d7',    factor: 1 },
-  { label: '1.5\u00d7',  factor: 1.5 },
-  { label: '2\u00d7',    factor: 2 },
-  { label: '3\u00d7',    factor: 3 },
-  { label: '4\u00d7',    factor: 4 },
-];
-
 function getBaseFrameRate(): number {
-  return (activeSprite as any)?.frameRate ?? animation?.frameRate ?? 30;
+  return getBaseFrameRateFor(animation, activeSprite);
 }
 
 function getMatchingSpeedPresetValue(): string {
-  const fps = parseInt(speedValue, 10);
-  if (!Number.isFinite(fps)) return 'custom';
-
-  const baseRate = getBaseFrameRate();
-  const preset = SPEED_PRESETS.find(p => Math.round(baseRate * p.factor) === fps);
-  return preset ? String(preset.factor) : 'custom';
+  return getMatchingSpeedPresetValueFor(speedValue, getBaseFrameRate());
 }
 
 function updateSpeedPresetTrigger(): void {
@@ -1783,213 +1066,6 @@ function selectSpeedPresetValue(value: string): void {
   setSpeedValue(String(Math.round(getBaseFrameRate() * preset.factor)));
 }
 
-// ── Export helpers ──
-let exportCancelled = false;
-
-function isCanvasImageSource(value: unknown): value is CanvasImageSource {
-  if (value instanceof HTMLCanvasElement) return true;
-  if (value instanceof HTMLImageElement) return true;
-  if (value instanceof HTMLVideoElement) return true;
-  if (typeof ImageBitmap !== 'undefined' && value instanceof ImageBitmap) return true;
-  if (typeof OffscreenCanvas !== 'undefined' && value instanceof OffscreenCanvas) return true;
-  return false;
-}
-
-function renderFrameToCanvas(frameIdx: number, w: number, h: number): HTMLCanvasElement {
-  if (!pixiApp) throw new Error('PixiJS app is not initialized.');
-  const scale = Math.min(w / Math.max(animation!.size[0], 1), h / Math.max(animation!.size[1], 1));
-  const panExportX = animation!.position[0] * scale - w / 2;
-  const panExportY = animation!.position[1] * scale - h / 2;
-
-  const frameContent = renderFrameToPixiContainer(
-    animation!, textures, spriteTimelines!,
-    activeSpriteIndex, frameIdx,
-    imageFilter, spriteFilter,
-    scale, panExportX, panExportY,
-    w, h, 1,
-  );
-
-  const extracted = pixiApp.renderer.extract.canvas({
-    target: frameContent,
-    frame: new Rectangle(0, 0, w, h),
-    resolution: 1,
-    clearColor: '#00000000',
-  });
-
-  if (extracted instanceof HTMLCanvasElement) {
-    return extracted;
-  }
-
-  const fallbackCanvas = document.createElement('canvas');
-  fallbackCanvas.width = w;
-  fallbackCanvas.height = h;
-  const fallbackCtx = fallbackCanvas.getContext('2d');
-  if (fallbackCtx && isCanvasImageSource(extracted)) {
-    fallbackCtx.drawImage(extracted, 0, 0, w, h);
-  } else {
-    console.warn('Pixi extract returned non-canvas image source; export frame is blank.');
-  }
-  return fallbackCanvas;
-}
-
-function getExportSize(): { w: number; h: number } {
-  const size = getCurrentExportSize();
-  return { w: size.width, h: size.height };
-}
-
-function showExportOverlay(title: string): void {
-  exportCancelled = false;
-  publishViewerExport({
-    visible: true,
-    title,
-    progress: 0,
-    status: t('export.preparing'),
-  });
-}
-
-function hideExportOverlay(): void {
-  publishViewerExport({ visible: false });
-}
-
-function getActiveAnimationBaseName(): string {
-  return stripKnownAnimationExtension(getActiveTab()?.displayName ?? 'animation');
-}
-
-function getExportName(ext: string): string {
-  const base = getActiveAnimationBaseName();
-  const sprName = activeSpriteIndex === -1 ? 'main' : (animation!.sprite[activeSpriteIndex].name || 'sprite_' + activeSpriteIndex);
-  return base + '_' + sprName + '.' + ext;
-}
-
-// ── Export PNG (current frame) ──
-function exportPng(): void {
-  if (!animation || !activeSprite) return;
-  const { w, h } = getExportSize();
-  const offCanvas = renderFrameToCanvas(currentFrame, w, h);
-  offCanvas.toBlob(blob => {
-    if (blob) downloadBlob(blob, getExportName('png'));
-  }, 'image/png');
-  drawCurrentFrame();
-}
-
-initAnimatedWebpEncoder().catch(() => {
-  webpEncoderAvailable = false;
-  publishViewerCommand({
-    webpDisabled: true,
-    webpTitle: 'WebP WASM failed to load',
-  });
-});
-
-// ── Export animation helper ──
-async function exportAnimCommon(
-  formatLabel: string,
-  encodeFn: (frames: HTMLCanvasElement[], w: number, h: number, fps: number) => Promise<Uint8Array>,
-  mime: string,
-  ext: string,
-): Promise<void> {
-  if (!animation || !activeSprite) return;
-  showExportOverlay(t('export.exporting', { format: formatLabel }));
-
-  try {
-    const { w, h } = getExportSize();
-    const begin = frameRange.begin;
-    const end = frameRange.end;
-    const totalFrames = end - begin + 1;
-    const fps = parseInt(speedValue, 10) || 30;
-
-    const canvasFrames: HTMLCanvasElement[] = [];
-    for (let i = 0; i < totalFrames; i++) {
-      if (exportCancelled) { hideExportOverlay(); drawCurrentFrame(); return; }
-      const fi = begin + i;
-      canvasFrames.push(renderFrameToCanvas(fi, w, h));
-      publishViewerExport({
-        progress: ((i + 1) / totalFrames) * 50,
-        status: t('export.rendering', { current: String(i + 1), total: String(totalFrames) }),
-      });
-      if (i % 5 === 4) await new Promise(r => setTimeout(r, 0));
-    }
-
-    if (exportCancelled) { hideExportOverlay(); drawCurrentFrame(); return; }
-    publishViewerExport({
-      progress: 50,
-      status: t('export.encoding', { format: formatLabel }),
-    });
-    await new Promise(r => setTimeout(r, 0));
-
-    const bytes = await encodeFn(canvasFrames, w, h, fps);
-    publishViewerExport({ progress: 100 });
-
-    if (!exportCancelled) {
-      const blob = new Blob([bytes as BlobPart], { type: mime });
-      downloadBlob(blob, getExportName(ext));
-    }
-  } catch (e: any) {
-    alert(e.message || t('export.failed'));
-  }
-  hideExportOverlay();
-  drawCurrentFrame();
-}
-
-function exportApng(): void {
-  void exportAnimCommon('APNG', encodeApng, 'image/apng', 'apng');
-}
-
-function exportWebp(): void {
-  void exportAnimCommon('WebP', encodeAnimatedWebp, 'image/webp', 'webp');
-}
-
-// ── Export FLA ──
-async function exportFla(): Promise<void> {
-  if (!animation) return;
-  const baseName = getActiveAnimationBaseName();
-  publishViewerCommand({ commandDisabled: true });
-  try {
-    const blob = await exportFLA(animation, textures);
-    downloadBlob(blob, baseName + '.fla');
-  } finally {
-    enableControls(Boolean(activeSprite));
-  }
-}
-
-// ── Format conversion exports ──
-function getConvertName(ext: string): string {
-  return getActiveAnimationBaseName() + '.pam.' + ext;
-}
-
-async function convertJson(): Promise<void> {
-  if (!animation) return;
-  const raw = toRawJson(animation);
-  const wasm = await loadPamCodecWasm();
-  const text = wasm.pamToJson(raw) + '\n';
-  const blob = new Blob([text], { type: 'application/json' });
-  downloadBlob(blob, getConvertName('json'));
-}
-
-function convertYaml(): void {
-  if (!animation) return;
-  const raw = toRawJson(animation);
-  const text = jsYamlMod.dump(raw, { lineWidth: -1, noRefs: true });
-  const blob = new Blob([text], { type: 'text/yaml' });
-  downloadBlob(blob, getConvertName('yaml'));
-}
-
-function convertToml(): void {
-  if (!animation) return;
-  const raw = toRawJson(animation);
-  const text = smolTomlMod.stringify(raw as any);
-  const blob = new Blob([text], { type: 'application/toml' });
-  downloadBlob(blob, getConvertName('toml'));
-}
-
-async function convertPam(): Promise<void> {
-  if (!animation) return;
-  const raw = toRawJson(animation);
-  const buf = await encodePAM(raw);
-  const blob = new Blob([buf], { type: 'application/octet-stream' });
-  const name = getActiveAnimationBaseName() + '.pam';
-  downloadBlob(blob, name);
-}
-
 // ── Init ──
 async function initApp(): Promise<void> {
   // Initialize PixiJS Application
@@ -2004,7 +1080,7 @@ async function initApp(): Promise<void> {
   });
 
   loadSettings();
-  publishPanelLayout();
+  panelLayout.publish();
   renderEmptyAnimationState();
   resizeCanvas();
 }
@@ -2019,7 +1095,7 @@ let mounted = true;
 return () => {
   if (!mounted) return;
   mounted = false;
-  stop();
+  playback.stop();
   pixiApp?.destroy(true);
   pixiApp = null;
   resetPixiRenderer();
