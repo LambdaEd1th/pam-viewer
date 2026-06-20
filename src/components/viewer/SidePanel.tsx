@@ -101,14 +101,14 @@ export function SidePanel({
         {kind === 'images' && images.map(item => (
           <li key={item.index} data-filter-name={item.filterName} className={isHiddenByRegex(item.filterName) ? 'regex-hidden' : undefined}>
             {item.thumbSrc ? <img className="item-thumb" src={item.thumbSrc} alt="" /> : null}
+            <span className="item-label" title={item.title}>{item.name}</span>
+            {item.sizeText ? <span className="item-size">{item.sizeText}</span> : null}
             <input
               type="checkbox"
               className="filter-switch-input"
               checked={item.checked}
               onChange={event => setViewerImageChecked(item.index, event.currentTarget.checked)}
             />
-            <span className="item-label" title={item.title}>{item.name}</span>
-            {item.sizeText ? <span className="item-size">{item.sizeText}</span> : null}
           </li>
         ))}
         {kind === 'sprites' && sprites.map(item => (
@@ -122,6 +122,8 @@ export function SidePanel({
             ].filter(Boolean).join(' ') || undefined}
           >
             {item.thumbSrc ? <img className="item-thumb" src={item.thumbSrc} alt="" /> : (item.main ? <span className="sprite-spacer" /> : null)}
+            <span className="item-label">{item.name}</span>
+            <span className="item-size">{item.frameText}</span>
             {item.checked === null ? null : (
               <input
                 type="checkbox"
@@ -134,8 +136,6 @@ export function SidePanel({
                 }}
               />
             )}
-            <span className="item-label">{item.name}</span>
-            <span className="item-size">{item.frameText}</span>
             <button
               type="button"
               className="btn-activate"
