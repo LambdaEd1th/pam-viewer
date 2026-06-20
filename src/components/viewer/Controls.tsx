@@ -1,7 +1,6 @@
 import { Children, Fragment, isValidElement, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { ChangeEvent, ComponentProps, InputHTMLAttributes, KeyboardEvent, OptionHTMLAttributes, ReactNode, SelectHTMLAttributes } from 'react';
 import { createPortal } from 'react-dom';
-import { Check } from 'lucide-react';
 
 type ClassNameValue = string | false | null | undefined;
 
@@ -270,9 +269,7 @@ export function ViewerCheckbox({
   return (
     <label className={cn('viewer-checkbox', className)}>
       <input type="checkbox" {...inputProps} />
-      <span className="viewer-checkbox-box" aria-hidden="true">
-        <Check />
-      </span>
+      <span className="viewer-checkbox-box" aria-hidden="true" />
       <span className="viewer-checkbox-label">{children}</span>
     </label>
   );

@@ -103,6 +103,7 @@ export function SidePanel({
             {item.thumbSrc ? <img className="item-thumb" src={item.thumbSrc} alt="" /> : null}
             <input
               type="checkbox"
+              className="filter-switch-input"
               checked={item.checked}
               onChange={event => setViewerImageChecked(item.index, event.currentTarget.checked)}
             />
@@ -124,6 +125,7 @@ export function SidePanel({
             {item.checked === null ? null : (
               <input
                 type="checkbox"
+                className="filter-switch-input"
                 checked={item.checked}
                 onChange={event => {
                   if (item.spriteIndex !== null) {

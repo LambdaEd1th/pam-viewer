@@ -196,6 +196,7 @@ input[type="checkbox"] {
 
 .viewer-checkbox {
   position: relative;
+  min-height: 24px;
   cursor: pointer;
   user-select: none;
 }
@@ -211,33 +212,59 @@ input[type="checkbox"] {
 
 .viewer-checkbox-box {
   display: inline-flex;
-  width: 16px;
-  height: 16px;
-  flex: 0 0 16px;
+  position: relative;
+  width: 44px;
+  height: 24px;
+  flex: 0 0 44px;
   align-items: center;
   justify-content: center;
-  border: 1px solid var(--color-border-strong);
-  border-radius: 4px;
-  background: var(--color-control);
+  border: 1px solid color-mix(in srgb, var(--color-border-strong) 72%, transparent);
+  border-radius: 999px;
+  background: var(--color-control-hover);
   color: transparent;
-  transition: background 120ms ease, border-color 120ms ease, color 120ms ease;
+  box-shadow: inset 0 1px 2px color-mix(in srgb, var(--color-shadow) 34%, transparent);
+  transition: background 160ms ease, border-color 160ms ease, box-shadow 160ms ease;
 }
 
-.viewer-checkbox-box svg {
-  width: 12px;
-  height: 12px;
-  stroke-width: 3;
+.viewer-checkbox-box::after {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 20px;
+  height: 20px;
+  border-radius: 999px;
+  background: #ffffff;
+  box-shadow:
+    0 2px 5px color-mix(in srgb, var(--color-shadow) 42%, transparent),
+    inset 0 1px 0 rgba(255, 255, 255, 0.9);
+  content: "";
+  transition: transform 160ms ease;
 }
 
 .viewer-checkbox input[type="checkbox"]:checked + .viewer-checkbox-box {
   border-color: var(--color-accent-border);
   background: var(--color-accent);
   color: var(--color-accent-contrast);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--color-accent) 18%, transparent);
+}
+
+.viewer-checkbox input[type="checkbox"]:checked + .viewer-checkbox-box::after {
+  transform: translateX(20px);
 }
 
 .viewer-checkbox input[type="checkbox"]:focus-visible + .viewer-checkbox-box {
   outline: 2px solid var(--color-focus);
-  outline-offset: 1px;
+  outline-offset: 2px;
+}
+
+.viewer-checkbox:not(:has(input[type="checkbox"]:disabled)):hover .viewer-checkbox-box {
+  border-color: var(--color-border-stronger);
+  background: color-mix(in srgb, var(--color-control-hover) 82%, var(--color-text-muted));
+}
+
+.viewer-checkbox:not(:has(input[type="checkbox"]:disabled)):hover input[type="checkbox"]:checked + .viewer-checkbox-box {
+  border-color: var(--color-accent-border);
+  background: var(--color-accent-border);
 }
 
 .viewer-checkbox:has(input[type="checkbox"]:disabled) {
@@ -247,6 +274,61 @@ input[type="checkbox"] {
 
 .viewer-checkbox-label {
   color: inherit;
+}
+
+.filter-switch-input {
+  position: relative;
+  width: 34px;
+  height: 18px;
+  flex: 0 0 34px;
+  border: 1px solid color-mix(in srgb, var(--color-border-strong) 72%, transparent);
+  border-radius: 999px;
+  background: var(--color-control-hover);
+  box-shadow: inset 0 1px 2px color-mix(in srgb, var(--color-shadow) 28%, transparent);
+  cursor: pointer;
+  transition: background 160ms ease, border-color 160ms ease, box-shadow 160ms ease;
+  appearance: none;
+  -webkit-appearance: none;
+}
+
+.filter-switch-input::after {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 14px;
+  height: 14px;
+  border-radius: 999px;
+  background: #ffffff;
+  box-shadow:
+    0 1px 4px color-mix(in srgb, var(--color-shadow) 38%, transparent),
+    inset 0 1px 0 rgba(255, 255, 255, 0.9);
+  content: "";
+  transition: transform 160ms ease;
+}
+
+.filter-switch-input:checked {
+  border-color: var(--color-accent-border);
+  background: var(--color-accent);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--color-accent) 14%, transparent);
+}
+
+.filter-switch-input:checked::after {
+  transform: translateX(16px);
+}
+
+.filter-switch-input:focus-visible {
+  outline: 2px solid var(--color-focus);
+  outline-offset: 2px;
+}
+
+.filter-switch-input:hover {
+  border-color: var(--color-border-stronger);
+  background: color-mix(in srgb, var(--color-control-hover) 82%, var(--color-text-muted));
+}
+
+.filter-switch-input:checked:hover {
+  border-color: var(--color-accent-border);
+  background: var(--color-accent-border);
 }
 
 #app {
