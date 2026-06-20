@@ -269,8 +269,8 @@ export function ViewerCheckbox({
   return (
     <label className={cn('viewer-checkbox', className)}>
       <input type="checkbox" {...inputProps} />
-      <span className="viewer-checkbox-box" aria-hidden="true" />
       <span className="viewer-checkbox-label">{children}</span>
+      <span className="viewer-checkbox-box" aria-hidden="true" />
     </label>
   );
 }
