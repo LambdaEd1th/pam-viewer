@@ -1,9 +1,13 @@
 (() => {
     const assetRoot = __PAM_ASSET_ROOT__;
-    const version = "20260723-render-worker-2";
+    const version = "20260723-render-worker-3";
+
+    window.pamStage?.destroy?.();
+
     let canvas = document.getElementById("pam-stage-canvas");
     let backend = null;
     let worker = null;
+    let startupWorker = null;
     let handle = null;
     let resizeObserver = null;
     let mainFramePending = false;
@@ -11,8 +15,7 @@
     let pendingView = null;
     let destroyed = false;
     let fallingBack = false;
-
-    window.pamStage?.destroy?.();
+    let canvasTransferred = false;
 
     const absoluteAsset = (relative) => {
         const root = new URL(`${assetRoot.replace(/\/$/, "")}/`, document.baseURI);
@@ -122,22 +125,32 @@
         resize();
     };
 
-    const replaceTransferredCanvas = () => {
+    const replaceTransferredCanvas = (force = false) => {
+        if (!force && !canvasTransferred) return;
         const replacement = canvas.cloneNode(false);
         replacement.removeAttribute("width");
         replacement.removeAttribute("height");
         canvas.replaceWith(replacement);
         canvas = replacement;
+        canvasTransferred = false;
     };
 
     const startMain = async () => {
+        if (destroyed) return false;
         const runtime = await import(
             `${absoluteAsset("renderer/pkg/pam_viewer_renderer.js")}?v=${version}`
         );
+        if (destroyed) return false;
         await runtime.default();
-        handle = new runtime.RendererHandle();
+        if (destroyed) return false;
+        const candidateHandle = new runtime.RendererHandle();
         const size = canvasSize();
-        await handle.start(canvas, size.width, size.height);
+        await candidateHandle.start(canvas, size.width, size.height);
+        if (destroyed) {
+            candidateHandle.destroy();
+            return false;
+        }
+        handle = candidateHandle;
         backend = "main";
         canvas.dataset.rendererBackend = "main";
         document.documentElement.dataset.renderWorkerBackend = "main";
@@ -145,16 +158,31 @@
         flushPending();
         scheduleMainFrame();
         send({ type: "ready", backend: "main" });
+        return true;
+    };
+
+    const startMainWithRetry = async () => {
+        try {
+            return await startMain();
+        } catch (error) {
+            if (destroyed) return false;
+            replaceTransferredCanvas(true);
+            document.documentElement.dataset.renderWorkerFallback = errorMessage(error);
+            return startMain();
+        }
     };
 
     const probeWorker = (candidate) =>
         new Promise((resolve) => {
-            const timeout = window.setTimeout(() => resolve(false), 2500);
-            const listener = (event) => {
-                if (event.data?.type !== "probe") return;
+            const finish = (supported) => {
                 window.clearTimeout(timeout);
                 candidate.removeEventListener("message", listener);
-                resolve(Boolean(event.data.supported));
+                resolve(supported);
+            };
+            const timeout = window.setTimeout(() => finish(false), 2500);
+            const listener = (event) => {
+                if (event.data?.type !== "probe") return;
+                finish(Boolean(event.data.supported));
             };
             candidate.addEventListener("message", listener);
             candidate.postMessage({ type: "probe" });
@@ -168,7 +196,7 @@
         backend = null;
         replaceTransferredCanvas();
         try {
-            await startMain();
+            await startMainWithRetry();
             document.documentElement.dataset.renderWorkerFallback = reason;
         } catch (error) {
             send({ type: "error", message: errorMessage(error) });
@@ -178,6 +206,7 @@
     };
 
     const startWorker = async (candidate) => {
+        if (destroyed) return false;
         const ready = new Promise((resolve, reject) => {
             const timeout = window.setTimeout(
                 () => reject(new Error("Render Worker startup timed out")),
@@ -206,18 +235,25 @@
         });
         const size = canvasSize();
         const offscreen = canvas.transferControlToOffscreen();
+        canvasTransferred = true;
         worker = candidate;
+        startupWorker = null;
         postWorker(
             { type: "init", canvas: offscreen, ...size },
             [offscreen],
         );
         await ready;
+        if (destroyed) {
+            candidate.terminate();
+            return false;
+        }
         backend = "worker";
         canvas.dataset.rendererBackend = "worker";
         document.documentElement.dataset.renderWorkerBackend = "offscreen-wgpu";
         installResize();
         flushPending();
         send({ type: "ready", backend: "worker" });
+        return true;
     };
 
     const api = {
@@ -233,14 +269,17 @@
         destroy() {
             destroyed = true;
             resizeObserver?.disconnect();
+            startupWorker?.terminate();
             if (worker) {
                 postWorker({ type: "destroy" });
                 worker.terminate();
             }
             handle?.destroy();
             worker = null;
+            startupWorker = null;
             handle = null;
             backend = null;
+            replaceTransferredCanvas();
         },
     };
     window.pamStage = api;
@@ -253,21 +292,27 @@
                 `${absoluteAsset("renderer/pam-render-worker.js")}?v=${version}`,
                 { type: "module" },
             );
+            startupWorker = candidate;
             if (await probeWorker(candidate)) {
-                try {
-                    await startWorker(candidate);
+                if (destroyed) {
+                    candidate.terminate();
                     return;
+                }
+                try {
+                    if (await startWorker(candidate)) return;
                 } catch (error) {
                     candidate.terminate();
                     worker = null;
-                    replaceTransferredCanvas();
+                    startupWorker = null;
+                    replaceTransferredCanvas(true);
                     document.documentElement.dataset.renderWorkerFallback = errorMessage(error);
                 }
             } else {
                 candidate.terminate();
+                startupWorker = null;
             }
         }
-        await startMain();
+        if (!destroyed) await startMainWithRetry();
     };
 
     attach().catch((error) => {

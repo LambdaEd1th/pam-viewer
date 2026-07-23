@@ -208,7 +208,10 @@ async fn create_runtime(canvas: CanvasTarget, width: u32, height: u32) -> crate:
     let width = width.max(1);
     let height = height.max(1);
     canvas.set_size(width, height);
-    let instance = wgpu::Instance::default();
+    let instance = wgpu::util::new_instance_with_webgpu_detection(
+        wgpu::InstanceDescriptor::new_without_display_handle(),
+    )
+    .await;
     let surface = match &canvas {
         CanvasTarget::Html(canvas) => instance
             .create_surface(wgpu::SurfaceTarget::Canvas(canvas.clone()))

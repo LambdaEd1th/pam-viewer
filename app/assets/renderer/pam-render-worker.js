@@ -1,4 +1,4 @@
-const runtimeVersion = "20260723-render-worker-2";
+const runtimeVersion = "20260723-render-worker-3";
 let handle = null;
 let framePending = false;
 
