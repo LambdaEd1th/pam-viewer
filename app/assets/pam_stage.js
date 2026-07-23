@@ -1,6 +1,6 @@
 (() => {
     const assetRoot = __PAM_ASSET_ROOT__;
-    const version = "20260723-render-worker-3";
+    const version = "20260723-render-worker-5";
 
     window.pamStage?.destroy?.();
 
@@ -135,17 +135,24 @@
         canvasTransferred = false;
     };
 
-    const startMain = async () => {
+    const startMain = async (forceWebgl = false) => {
         if (destroyed) return false;
         const runtime = await import(
             `${absoluteAsset("renderer/pkg/pam_viewer_renderer.js")}?v=${version}`
         );
         if (destroyed) return false;
-        await runtime.default();
+        await runtime.default({
+            module_or_path:
+                `${absoluteAsset("renderer/pkg/pam_viewer_renderer_bg.wasm")}?v=${version}`,
+        });
         if (destroyed) return false;
         const candidateHandle = new runtime.RendererHandle();
         const size = canvasSize();
-        await candidateHandle.start(canvas, size.width, size.height);
+        if (forceWebgl) {
+            await candidateHandle.start_webgl(canvas, size.width, size.height);
+        } else {
+            await candidateHandle.start(canvas, size.width, size.height);
+        }
         if (destroyed) {
             candidateHandle.destroy();
             return false;
@@ -161,14 +168,14 @@
         return true;
     };
 
-    const startMainWithRetry = async () => {
+    const startMainWithRetry = async (forceWebgl = false) => {
         try {
-            return await startMain();
+            return await startMain(forceWebgl);
         } catch (error) {
             if (destroyed) return false;
             replaceTransferredCanvas(true);
             document.documentElement.dataset.renderWorkerFallback = errorMessage(error);
-            return startMain();
+            return startMain(forceWebgl);
         }
     };
 
@@ -196,7 +203,7 @@
         backend = null;
         replaceTransferredCanvas();
         try {
-            await startMainWithRetry();
+            await startMainWithRetry(true);
             document.documentElement.dataset.renderWorkerFallback = reason;
         } catch (error) {
             send({ type: "error", message: errorMessage(error) });
@@ -287,6 +294,7 @@
     const attach = async () => {
         if (!canvas) throw new Error("PAM stage canvas is unavailable");
         const canTransfer = typeof canvas.transferControlToOffscreen === "function";
+        let forceMainWebgl = !navigator.gpu;
         if (canTransfer && typeof Worker !== "undefined" && navigator.gpu) {
             const candidate = new Worker(
                 `${absoluteAsset("renderer/pam-render-worker.js")}?v=${version}`,
@@ -305,14 +313,16 @@
                     worker = null;
                     startupWorker = null;
                     replaceTransferredCanvas(true);
+                    forceMainWebgl = true;
                     document.documentElement.dataset.renderWorkerFallback = errorMessage(error);
                 }
             } else {
                 candidate.terminate();
                 startupWorker = null;
+                forceMainWebgl = true;
             }
         }
-        if (!destroyed) await startMainWithRetry();
+        if (!destroyed) await startMainWithRetry(forceMainWebgl);
     };
 
     attach().catch((error) => {

@@ -1,7 +1,14 @@
-const runtimeVersion = "20260723-worker-runtime-2";
+const runtimeVersion = "20260723-worker-runtime-3";
 const ready = (async () => {
-    const runtime = await import(`./pkg/pam_viewer_worker.js?v=${runtimeVersion}`);
-    await runtime.default();
+    const runtime = await import(
+        "./pkg/pam_viewer_worker.js?v=20260723-worker-runtime-3"
+    );
+    await runtime.default({
+        module_or_path: new URL(
+            `./pkg/pam_viewer_worker_bg.wasm?v=${runtimeVersion}`,
+            import.meta.url,
+        ),
+    });
     return runtime;
 })();
 

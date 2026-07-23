@@ -23,7 +23,7 @@ use wasm_bindgen_futures::JsFuture;
 use web_sys::{MessageEvent, Worker, WorkerOptions, WorkerType};
 
 #[cfg(target_arch = "wasm32")]
-const PROCESSING_WORKER_VERSION: &str = "20260723-worker-runtime-2";
+const PROCESSING_WORKER_VERSION: &str = "20260723-worker-runtime-3";
 
 #[cfg(target_arch = "wasm32")]
 struct PendingRequest {

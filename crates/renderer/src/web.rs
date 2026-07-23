@@ -2,6 +2,7 @@ use std::cell::RefCell;
 use std::rc::Rc;
 use std::sync::Arc;
 
+use futures_util::future::{Either, select};
 use pam_viewer_core::{RenderScenePayload, RenderViewPayload};
 use wasm_bindgen::prelude::*;
 
@@ -115,7 +116,21 @@ impl RendererHandle {
         height: u32,
     ) -> Result<(), JsValue> {
         *self.runtime.borrow_mut() = Some(
-            create_runtime(CanvasTarget::Html(canvas), width, height)
+            create_runtime(CanvasTarget::Html(canvas), width, height, true)
+                .await
+                .map_err(renderer_js_error)?,
+        );
+        Ok(())
+    }
+
+    pub async fn start_webgl(
+        &self,
+        canvas: web_sys::HtmlCanvasElement,
+        width: u32,
+        height: u32,
+    ) -> Result<(), JsValue> {
+        *self.runtime.borrow_mut() = Some(
+            create_runtime(CanvasTarget::Html(canvas), width, height, false)
                 .await
                 .map_err(renderer_js_error)?,
         );
@@ -129,7 +144,7 @@ impl RendererHandle {
         height: u32,
     ) -> Result<(), JsValue> {
         *self.runtime.borrow_mut() = Some(
-            create_runtime(CanvasTarget::Offscreen(canvas), width, height)
+            create_runtime(CanvasTarget::Offscreen(canvas), width, height, true)
                 .await
                 .map_err(renderer_js_error)?,
         );
@@ -204,14 +219,36 @@ fn apply_view(stage: &mut StageScene, view: RenderViewPayload) {
     stage.dark_background = view.dark_background;
 }
 
-async fn create_runtime(canvas: CanvasTarget, width: u32, height: u32) -> crate::Result<Runtime> {
+async fn create_runtime(
+    canvas: CanvasTarget,
+    width: u32,
+    height: u32,
+    allow_webgpu: bool,
+) -> crate::Result<Runtime> {
     let width = width.max(1);
     let height = height.max(1);
     canvas.set_size(width, height);
-    let instance = wgpu::util::new_instance_with_webgpu_detection(
-        wgpu::InstanceDescriptor::new_without_display_handle(),
-    )
-    .await;
+    let mut instance_descriptor = wgpu::InstanceDescriptor::new_without_display_handle();
+    if !allow_webgpu {
+        instance_descriptor
+            .backends
+            .remove(wgpu::Backends::BROWSER_WEBGPU);
+    } else if instance_descriptor
+        .backends
+        .contains(wgpu::Backends::BROWSER_WEBGPU)
+    {
+        let detection = wgpu::util::is_browser_webgpu_supported();
+        let timeout = gloo_timers::future::TimeoutFuture::new(2_000);
+        futures_util::pin_mut!(detection);
+        futures_util::pin_mut!(timeout);
+        let supported = matches!(select(detection, timeout).await, Either::Left((true, _)));
+        if !supported {
+            instance_descriptor
+                .backends
+                .remove(wgpu::Backends::BROWSER_WEBGPU);
+        }
+    }
+    let instance = wgpu::Instance::new(instance_descriptor);
     let surface = match &canvas {
         CanvasTarget::Html(canvas) => instance
             .create_surface(wgpu::SurfaceTarget::Canvas(canvas.clone()))
