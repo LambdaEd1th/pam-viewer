@@ -32,6 +32,7 @@ jobs:
             libwebkit2gtk-4.1-dev \
             libx11-dev \
             libxcursor-dev \
+            libxdo-dev \
             libxi-dev \
             libxkbcommon-dev \
             libxrandr-dev \
@@ -88,6 +89,7 @@ jobs:
             libwebkit2gtk-4.1-dev \
             libx11-dev \
             libxcursor-dev \
+            libxdo-dev \
             libxi-dev \
             libxkbcommon-dev \
             libxrandr-dev \
