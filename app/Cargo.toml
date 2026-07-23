@@ -6,6 +6,24 @@ license.workspace = true
 repository.workspace = true
 publish.workspace = true
 
+[package.metadata.bundle]
+name = "PAM Viewer"
+identifier = "io.github.lambdaed1th.pam-viewer"
+category = "public.app-category.developer-tools"
+short_description = "PAM animation viewer and exporter"
+long_description = """
+A cross-platform viewer and exporter for PopCap PAM animations.
+"""
+
+[package.metadata.bundle.bin.pam-viewer]
+name = "PAM Viewer"
+identifier = "io.github.lambdaed1th.pam-viewer"
+category = "public.app-category.developer-tools"
+short_description = "PAM animation viewer and exporter"
+long_description = """
+A cross-platform viewer and exporter for PopCap PAM animations.
+"""
+
 [[bin]]
 name = "pam-viewer"
 path = "src/main.rs"

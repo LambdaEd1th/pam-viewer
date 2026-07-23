@@ -47,7 +47,7 @@ dx build --release --platform web --package pam-viewer-app
 cargo build --release -p pam-viewer-app
 ```
 
-The Web build is written to `target/dx/pam-viewer/release/web/public/`. GitHub Actions tests the native and wasm targets, builds native executables for macOS, Windows, and Linux, and deploys the wasm build to GitHub Pages.
+The Web build is written to `target/dx/pam-viewer/release/web/public/`. GitHub Actions checks native and Web builds for every change. Tags matching `v*` publish native packages and a Web archive to GitHub Releases, then deploy the Web build to GitHub Pages.
 
 ## Input
 
