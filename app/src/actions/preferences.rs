@@ -34,11 +34,30 @@ pub fn set_boundary(mut context: AppContext, value: bool) {
 }
 
 pub fn set_panel_open(mut context: AppContext, images: bool, value: bool) {
+    let compact_layout = *context.compact_layout.read();
+    if images {
+        context.images_panel_open.set(value);
+        if compact_layout && value {
+            context.sprites_panel_open.set(false);
+        }
+    } else {
+        context.sprites_panel_open.set(value);
+        if compact_layout && value {
+            context.images_panel_open.set(false);
+        }
+    }
+
     let mut preferences = context.preferences.write();
     if images {
         preferences.images_panel_open = value;
+        if compact_layout && value {
+            preferences.sprites_panel_open = false;
+        }
     } else {
         preferences.sprites_panel_open = value;
+        if compact_layout && value {
+            preferences.images_panel_open = false;
+        }
     }
     drop(preferences);
     context.save_preferences();

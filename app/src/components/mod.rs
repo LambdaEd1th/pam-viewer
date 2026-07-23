@@ -11,7 +11,7 @@ use dioxus_free_icons::icons::ld_icons::{LdImage, LdShapes};
 
 use crate::actions::finish_toolbar_reorder;
 use crate::i18n::tr;
-use crate::state::{AppContext, PanelSide, Theme};
+use crate::state::{AppContext, PanelSide, Theme, panel_state_for_layout};
 
 use panels::{ImagePanel, PanelResizeHandle, SpritePanel};
 use primitives::icon;
@@ -36,9 +36,8 @@ pub fn Workbench() -> Element {
     let tab = context.active_tab_snapshot();
     let panel_resizing = context.panel_resize.read().is_some();
     let compact_layout = *context.compact_layout.read();
-    let sprites_panel_visible = preferences.sprites_panel_open;
-    let images_panel_visible =
-        preferences.images_panel_open && (!compact_layout || !sprites_panel_visible);
+    let images_panel_visible = *context.images_panel_open.read();
+    let sprites_panel_visible = *context.sprites_panel_open.read();
     let theme_class = match preferences.theme {
         Theme::System => "system-theme",
         Theme::Light => "light-theme",
@@ -113,6 +112,17 @@ fn WorkbenchRoot(theme_class: String, children: Element) -> Element {
         let mut evaluator = document::eval(RESPONSIVE_LAYOUT_HOST);
         spawn(async move {
             while let Ok(compact) = evaluator.recv::<bool>().await {
+                let (images_open, sprites_open) = panel_state_for_layout(
+                    compact,
+                    *context.images_panel_open.read(),
+                    *context.sprites_panel_open.read(),
+                );
+                if *context.images_panel_open.read() != images_open {
+                    context.images_panel_open.set(images_open);
+                }
+                if *context.sprites_panel_open.read() != sprites_open {
+                    context.sprites_panel_open.set(sprites_open);
+                }
                 if *context.compact_layout.read() != compact {
                     context.compact_layout.set(compact);
                 }

@@ -52,10 +52,8 @@ pub fn Toolbar() -> Element {
         .filter(|group| group != "preferences" && (has_active_tab || group != "layers"))
         .collect::<Vec<_>>();
     let preferences = context.preferences.read().clone();
-    let compact_layout = *context.compact_layout.read();
-    let sprites_panel_visible = preferences.sprites_panel_open;
-    let images_panel_visible =
-        preferences.images_panel_open && (!compact_layout || !sprites_panel_visible);
+    let images_panel_visible = *context.images_panel_open.read();
+    let sprites_panel_visible = *context.sprites_panel_open.read();
     let dragging = context.dragged_toolbar_group.read().is_some();
     let mut more_open = use_signal(|| false);
     let mut settings_mounted = use_signal(|| false);
@@ -83,11 +81,7 @@ pub fn Toolbar() -> Element {
                 aria_label: tr(locale, "images"),
                 aria_pressed: images_panel_visible,
                 onclick: move |_| {
-                    let open = !images_panel_visible;
-                    if compact_layout && open && sprites_panel_visible {
-                        set_panel_open(context, false, false);
-                    }
-                    set_panel_open(context, true, open);
+                    set_panel_open(context, true, !images_panel_visible);
                 },
                 {icon(LdMenu)}
             }
@@ -130,11 +124,7 @@ pub fn Toolbar() -> Element {
                 aria_label: tr(locale, "sprites"),
                 aria_pressed: sprites_panel_visible,
                 onclick: move |_| {
-                    let open = !sprites_panel_visible;
-                    if compact_layout && open && images_panel_visible {
-                        set_panel_open(context, true, false);
-                    }
-                    set_panel_open(context, false, open);
+                    set_panel_open(context, false, !sprites_panel_visible);
                 },
                 {icon(LdPanelRight)}
             }
