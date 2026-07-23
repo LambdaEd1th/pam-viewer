@@ -1,0 +1,17 @@
+[application]
+name = "pam-viewer"
+default_platform = "web"
+asset_dir = "app/assets"
+
+[bundle]
+identifier = "io.github.lambdaed1th.pam-viewer"
+publisher = "LambdaEd1th"
+category = "DeveloperTool"
+short_description = "PAM animation viewer and exporter"
+
+[web.app]
+title = "PAM Viewer"
+base_path = "pam-viewer"
+
+[web.watcher]
+reload_html = true

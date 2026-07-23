@@ -1,4 +1,7 @@
-node_modules/
-dist/
-src/wasm/pam-codec/
-wasm/pam-codec-wasm/target/
+/target/
+/dist/
+/.dioxus/
+/node_modules/
+/app/assets/renderer/pkg/
+/app/assets/worker/pkg/
+.DS_Store

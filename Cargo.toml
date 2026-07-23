@@ -1,0 +1,50 @@
+[workspace]
+members = [
+    "app",
+    "crates/core",
+    "crates/formats",
+    "crates/native-window",
+    "crates/renderer",
+    "crates/worker",
+]
+resolver = "3"
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+license = "AGPL-3.0-or-later"
+repository = "https://github.com/LambdaEd1th/pam-viewer"
+publish = false
+
+[workspace.dependencies]
+bytemuck = { version = "1.24", features = ["derive"] }
+base64 = "0.22"
+crc32fast = "1.5"
+dioxus = { version = "0.7.9", default-features = false }
+dioxus-free-icons = { version = "0.10", features = ["lucide"] }
+dioxus-html = "0.7"
+dioxus-web = "0.7.9"
+futures-channel = "0.3"
+futures-util = "0.3"
+image = { version = "0.25", default-features = false, features = ["jpeg", "png", "webp"] }
+image-webp = "0.2.4"
+pam-codec = { git = "https://github.com/LambdaEd1th/pam-codec" }
+parking_lot = "0.12"
+png = "0.18"
+quick-xml = "0.41"
+regex = "1.13"
+rayon = "1"
+roxmltree = "0.21"
+serde = { version = "1", features = ["derive"] }
+serde_bytes = "0.11"
+serde_json = { version = "1", features = ["float_roundtrip"] }
+serde_yaml = "0.9.33"
+thiserror = "2"
+toml = "1.1"
+wgpu = "30"
+zip = { version = "8", default-features = false, features = ["deflate"] }
+
+[profile.release]
+lto = "thin"
+opt-level = "s"
+strip = true
