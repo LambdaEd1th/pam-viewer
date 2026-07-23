@@ -102,7 +102,7 @@ scripts/
 
 The Web application WASM contains the Dioxus UI only. Parsing, texture decoding, serialization, FLA generation, and raster export run in a separate processing Worker pool. Preview rendering uses a separate WGPU WASM module with OffscreenCanvas and automatically falls back to the same renderer on the browser main thread when OffscreenCanvas Worker rendering is unavailable. Native builds use the same processing requests through Rayon and render directly with WGPU.
 
-There is no React, Vite, PixiJS, shadcn/ui, daisyUI, or Node build step. The UI uses project-local CSS tokens inspired by the compact MoeSekai/rton-editor workspace style.
+The UI is implemented with Dioxus and project-local CSS tokens inspired by the compact MoeSekai/rton-editor workspace style.
 
 ## Verification
 
