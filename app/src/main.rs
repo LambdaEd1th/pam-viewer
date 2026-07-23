@@ -24,9 +24,9 @@ fn main() {
         let config = Config::new()
             .with_window(window)
             .with_menu(None)
-            .with_on_window(move |window, _| {
+            .with_on_window(move |_window, _| {
                 #[cfg(target_os = "macos")]
-                pam_viewer_native_window::make_opaque(&window);
+                pam_viewer_native_window::make_opaque(&_window);
             });
         dioxus::LaunchBuilder::desktop()
             .with_cfg(config)
