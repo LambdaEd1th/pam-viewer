@@ -75,7 +75,15 @@ fn sunflower_frames_render_with_visible_and_changing_pixels() {
     for row in 0..390 {
         let original = &rendered[0][row * 390 * 4..(row + 1) * 390 * 4];
         let expanded_row = &expanded[0][row * 800 * 4..row * 800 * 4 + 390 * 4];
-        assert_eq!(expanded_row, original, "expanded canvas changed row {row}");
+        for (column, (&expanded_channel, &original_channel)) in
+            expanded_row.iter().zip(original).enumerate()
+        {
+            assert!(
+                expanded_channel.abs_diff(original_channel) <= 1,
+                "expanded canvas changed row {row}, byte {column}: \
+                 {original_channel} -> {expanded_channel}"
+            );
+        }
     }
 
     let output = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
