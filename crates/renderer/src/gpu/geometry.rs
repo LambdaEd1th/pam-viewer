@@ -188,3 +188,43 @@ fn push_solid_quad(
         additive: false,
     });
 }
+
+#[cfg(test)]
+mod tests {
+    use std::sync::Arc;
+
+    use pam_viewer_core::{PamDocument, PamInfo};
+
+    use super::*;
+
+    #[test]
+    fn stage_camera_scales_with_the_canvas_backing_buffer() {
+        let document = PamDocument::new(
+            "scale.pam",
+            PamInfo {
+                version: 6,
+                frame_rate: 30,
+                position: [0.0, 0.0],
+                size: [160.0, 90.0],
+                image: Vec::new(),
+                sprite: Vec::new(),
+                main_sprite: None,
+            },
+            Vec::new(),
+        )
+        .unwrap();
+        let scene = StageScene {
+            document: Some(Arc::new(document)),
+            zoom: 1.25,
+            pan: [12.0, -8.0],
+            ..StageScene::default()
+        };
+
+        let css_camera = stage_camera(&scene, 640, 360, 1.0);
+        let hidpi_camera = stage_camera(&scene, 1280, 720, 2.0);
+
+        for (css, hidpi) in css_camera.into_iter().zip(hidpi_camera) {
+            assert!((hidpi - css * 2.0).abs() < 0.001);
+        }
+    }
+}

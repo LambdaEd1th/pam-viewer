@@ -287,14 +287,17 @@ fn StageCanvas() -> Element {
     }
 }
 
-fn camera_scale(tab: &ViewerTab, viewport: [f64; 2]) -> f64 {
-    let bounds = tab.document.stage_bounds();
+fn camera_fit(document: &pam_viewer_core::PamDocument, viewport: [f64; 2]) -> f64 {
+    let bounds = document.stage_bounds();
     let available_width = (viewport[0] - 72.0).max(1.0);
     let available_height = (viewport[1] - 72.0).max(1.0);
-    let fit = (available_width / bounds.width.max(1.0) as f64)
+    (available_width / bounds.width.max(1.0) as f64)
         .min(available_height / bounds.height.max(1.0) as f64)
-        .max(0.0001);
-    fit * tab.zoom as f64
+        .max(0.0001)
+}
+
+fn camera_scale(tab: &ViewerTab, viewport: [f64; 2]) -> f64 {
+    camera_fit(&tab.document, viewport) * tab.zoom as f64
 }
 
 fn screen_to_world(tab: &ViewerTab, viewport: [f64; 2], point: [f64; 2]) -> [f64; 2] {
@@ -337,17 +340,12 @@ fn begin_stage_drag(mut context: AppContext, point: [f64; 2]) {
     };
     let viewport = *context.stage_size.read();
     let world = screen_to_world(&tab, viewport, point);
+    let scale = camera_scale(&tab, viewport);
     let edge = context
         .preferences
         .read()
         .boundary
-        .then(|| {
-            hit_boundary(
-                tab.document.pam_bounds(),
-                world,
-                8.0 / camera_scale(&tab, viewport),
-            )
-        })
+        .then(|| hit_boundary(tab.document.pam_bounds(), world, 8.0 / scale))
         .flatten();
     let drag = if let Some(edge) = edge {
         StageDrag::Boundary {
@@ -355,6 +353,7 @@ fn begin_stage_drag(mut context: AppContext, point: [f64; 2]) {
             start: point,
             size: tab.document.pam.size,
             position: tab.document.pam.position,
+            scale,
         }
     } else {
         StageDrag::Pan {
@@ -372,10 +371,9 @@ fn update_stage_drag(context: AppContext, point: [f64; 2]) {
     let Some(tab) = context.active_tab_snapshot() else {
         return;
     };
-    let viewport = *context.stage_size.read();
-    let scale = camera_scale(&tab, viewport);
     match drag {
         StageDrag::Pan { start, pan } => {
+            let scale = camera_scale(&tab, *context.stage_size.read());
             context.update_active_tab(|tab| {
                 tab.pan = [
                     pan[0] + ((point[0] - start[0]) / scale) as f32,
@@ -388,9 +386,18 @@ fn update_stage_drag(context: AppContext, point: [f64; 2]) {
             start,
             size,
             position,
+            scale,
         } => {
             let delta = [(point[0] - start[0]) / scale, (point[1] - start[1]) / scale];
-            resize_boundary(context, edge, size, position, delta);
+            resize_boundary(
+                context,
+                edge,
+                size,
+                position,
+                delta,
+                *context.stage_size.read(),
+                scale,
+            );
         }
     }
 }
@@ -401,6 +408,8 @@ fn resize_boundary(
     original_size: [f64; 2],
     original_position: [f64; 2],
     delta: [f64; 2],
+    viewport: [f64; 2],
+    screen_scale: f64,
 ) {
     let west = matches!(
         edge,
@@ -429,23 +438,27 @@ fn resize_boundary(
         delta[1]
     };
     context.update_active_tab(|tab| {
-        let document = Arc::make_mut(&mut tab.document);
-        if west {
-            document.pam.position[0] = original_position[0] - dx;
-            document.pam.size[0] = (original_size[0] - dx).max(1.0);
-        } else if east {
-            document.pam.size[0] = (original_size[0] + dx).max(1.0);
-        }
-        if north {
-            document.pam.position[1] = original_position[1] - dy;
-            document.pam.size[1] = (original_size[1] - dy).max(1.0);
-        } else if south {
-            document.pam.size[1] = (original_size[1] + dy).max(1.0);
-        }
+        let (pam_size, fit) = {
+            let document = Arc::make_mut(&mut tab.document);
+            if west {
+                document.pam.position[0] = original_position[0] - dx;
+                document.pam.size[0] = (original_size[0] - dx).max(1.0);
+            } else if east {
+                document.pam.size[0] = (original_size[0] + dx).max(1.0);
+            }
+            if north {
+                document.pam.position[1] = original_position[1] - dy;
+                document.pam.size[1] = (original_size[1] - dy).max(1.0);
+            } else if south {
+                document.pam.size[1] = (original_size[1] + dy).max(1.0);
+            }
+            (document.pam.size, camera_fit(document, viewport))
+        };
+        tab.zoom = (screen_scale / fit).clamp(0.05, 64.0) as f32;
         if let Some(scale) = tab.export_scale {
             tab.export_size = [
-                (document.pam.size[0] * scale as f64).round().max(1.0) as u32,
-                (document.pam.size[1] * scale as f64).round().max(1.0) as u32,
+                (pam_size[0] * scale as f64).round().max(1.0) as u32,
+                (pam_size[1] * scale as f64).round().max(1.0) as u32,
             ];
         }
     });
@@ -475,5 +488,37 @@ fn hit_boundary(bounds: Rect, point: [f64; 2], threshold: f64) -> Option<Boundar
         (_, _, true, _) => Some(BoundaryEdge::North),
         (_, _, _, true) => Some(BoundaryEdge::South),
         _ => None,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use pam_viewer_core::{PamDocument, PamInfo};
+
+    use super::camera_fit;
+
+    #[test]
+    fn boundary_resize_can_preserve_the_screen_scale() {
+        let mut document = PamDocument::new(
+            "boundary.pam",
+            PamInfo {
+                version: 6,
+                frame_rate: 30,
+                position: [0.0, 0.0],
+                size: [320.0, 180.0],
+                image: Vec::new(),
+                sprite: Vec::new(),
+                main_sprite: None,
+            },
+            Vec::new(),
+        )
+        .unwrap();
+        let viewport = [960.0, 640.0];
+        let screen_scale = camera_fit(&document, viewport) * 1.75;
+
+        document.pam.size = [640.0, 360.0];
+        let compensated_zoom = screen_scale / camera_fit(&document, viewport);
+
+        assert!((camera_fit(&document, viewport) * compensated_zoom - screen_scale).abs() < 1e-9);
     }
 }

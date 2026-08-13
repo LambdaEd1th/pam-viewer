@@ -95,6 +95,15 @@ impl StageScene {
         }
     }
 
+    pub fn set_pam_geometry(&mut self, position: [f64; 2], size: [f64; 2]) {
+        let Some(document) = self.document.as_mut() else {
+            return;
+        };
+        let document = Arc::make_mut(document);
+        document.pam.position = position;
+        document.pam.size = size;
+    }
+
     pub fn stage_bounds(&self) -> Option<Rect> {
         self.document
             .as_ref()
@@ -166,5 +175,19 @@ mod tests {
             ..StageScene::default()
         });
         assert_eq!(scene.document_revision, empty_revision.wrapping_add(1));
+    }
+
+    #[test]
+    fn pam_geometry_can_change_without_reloading_textures() {
+        let mut scene = StageScene::default();
+        scene.set_document(Some(document("geometry.pam")));
+        let revision = scene.document_revision;
+
+        scene.set_pam_geometry([-12.0, 8.0], [320.0, 180.0]);
+
+        let document = scene.document.as_ref().unwrap();
+        assert_eq!(document.pam.position, [-12.0, 8.0]);
+        assert_eq!(document.pam.size, [320.0, 180.0]);
+        assert_eq!(scene.document_revision, revision);
     }
 }

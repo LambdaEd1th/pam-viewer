@@ -353,6 +353,8 @@ impl ViewerTab {
             frame: self.current_frame,
             image_filter: self.image_filter.clone(),
             sprite_filter: self.sprite_filter.clone(),
+            pam_position: self.document.pam.position,
+            pam_size: self.document.pam.size,
             zoom: self.zoom,
             pan: self.pan,
             boundary,
@@ -538,6 +540,7 @@ pub enum StageDrag {
         start: [f64; 2],
         size: [f64; 2],
         position: [f64; 2],
+        scale: f64,
     },
 }
 
