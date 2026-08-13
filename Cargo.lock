@@ -3714,7 +3714,7 @@ dependencies = [
 
 [[package]]
 name = "pam-viewer-app"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "base64",
  "dioxus",
@@ -3745,7 +3745,7 @@ dependencies = [
 
 [[package]]
 name = "pam_viewer_core"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "pam-codec",
  "rayon",
@@ -3758,7 +3758,7 @@ dependencies = [
 
 [[package]]
 name = "pam_viewer_formats"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "crc32fast",
  "image",
@@ -3779,7 +3779,7 @@ dependencies = [
 
 [[package]]
 name = "pam_viewer_native_window"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "objc2-app-kit",
  "tao",
@@ -3787,7 +3787,7 @@ dependencies = [
 
 [[package]]
 name = "pam_viewer_renderer"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "bytemuck",
  "console_error_panic_hook",
@@ -3811,7 +3811,7 @@ dependencies = [
 
 [[package]]
 name = "pam_viewer_worker"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "console_error_panic_hook",
  "pam_viewer_core",

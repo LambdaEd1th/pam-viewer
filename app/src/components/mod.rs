@@ -105,6 +105,43 @@ pub fn Workbench() -> Element {
     }
 }
 
+#[cfg(test)]
+mod style_tests {
+    const WORKBENCH_CSS: &str = include_str!("../../assets/workbench.css");
+
+    fn rule(selector: &str) -> &'static str {
+        let start = WORKBENCH_CSS
+            .find(selector)
+            .unwrap_or_else(|| panic!("missing CSS rule: {selector}"));
+        let body = &WORKBENCH_CSS[start + selector.len()..];
+        let mut depth = 1_u32;
+        for (index, character) in body.char_indices() {
+            match character {
+                '{' => depth += 1,
+                '}' => {
+                    depth -= 1;
+                    if depth == 0 {
+                        return &body[..index];
+                    }
+                }
+                _ => {}
+            }
+        }
+        panic!("unterminated CSS rule: {selector}");
+    }
+
+    #[test]
+    fn more_menu_does_not_clip_or_reposition_fixed_select_menus() {
+        let surface = rule(".pam-command-menu-surface {");
+        assert!(surface.contains("overflow: visible;"));
+        assert!(!surface.contains("transform:"));
+        assert!(!surface.contains("backdrop-filter:"));
+
+        let entrance = rule("@keyframes pam-menu-in {");
+        assert!(!entrance.contains("transform:"));
+    }
+}
+
 #[component]
 fn WorkbenchRoot(theme_class: String, children: Element) -> Element {
     let mut context = use_context::<AppContext>();

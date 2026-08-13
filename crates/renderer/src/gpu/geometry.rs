@@ -102,9 +102,8 @@ pub(super) fn stage_camera(
     ]
 }
 
-pub(super) fn export_camera(document: &PamDocument, width: u32, height: u32) -> Matrix {
-    let scale = (width as f32 / document.pam.size[0].max(1.0) as f32)
-        .min(height as f32 / document.pam.size[1].max(1.0) as f32);
+pub(super) fn export_camera(document: &PamDocument, render_scale: f32) -> Matrix {
+    let scale = render_scale.max(0.0001);
     [
         scale,
         0.0,

@@ -200,8 +200,10 @@ async fn export_frames(
         &frames,
         &request.image_filter,
         &request.sprite_filter,
-        width,
-        height,
+        pam_viewer_renderer::ExportTarget {
+            size: [width, height],
+            scale: request.render_scale as f32,
+        },
         Some(cancelled),
     )
     .await
@@ -294,6 +296,7 @@ mod tests {
             image_filter: Vec::new(),
             sprite_filter: Vec::new(),
             size: [64, 64],
+            render_scale: 1,
             fps: 30,
         }
     }

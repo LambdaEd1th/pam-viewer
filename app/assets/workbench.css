@@ -332,18 +332,29 @@
 .pam-command-menu-surface {
   display: flex;
   position: absolute;
+  isolation: isolate;
   top: 76px;
   right: 104px;
   width: min(760px, calc(100vw - 40px));
   max-height: min(70vh, 560px);
   flex-direction: column;
-  overflow: hidden;
+  overflow: visible;
   border: 1px solid var(--wb-border-bright);
   border-radius: 24px;
-  background: var(--wb-panel);
+  background: transparent;
   box-shadow: var(--wb-shadow), 0 0 34px color-mix(in srgb, var(--color-accent) 9%, transparent);
   pointer-events: auto;
   animation: pam-menu-in 180ms var(--wb-ease-out) both;
+}
+
+.pam-command-menu-surface::before {
+  position: absolute;
+  z-index: -1;
+  inset: 0;
+  border-radius: inherit;
+  background: var(--wb-panel);
+  content: "";
+  pointer-events: none;
   -webkit-backdrop-filter: blur(22px) saturate(180%);
   backdrop-filter: blur(22px) saturate(180%);
 }
@@ -900,12 +911,10 @@
 @keyframes pam-menu-in {
   from {
     opacity: 0;
-    transform: translate3d(0, -6px, 0) scale(0.98);
   }
 
   to {
     opacity: 1;
-    transform: translate3d(0, 0, 0) scale(1);
   }
 }
 
